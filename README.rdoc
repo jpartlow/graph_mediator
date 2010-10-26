@@ -1,6 +1,106 @@
-= graph_mediator
+= Graph Mediator
 
-Description goes here.
+GraphMediator is used to help coordinate state between a graph of ActiveRecord
+objects related to a single root node.  Its role is assisting in cases where
+you are representing a complex concept as a graph of related objects with
+potentially circular interdependencies.  Changing attributes in one object
+might require adding or removing of dependent objects.  Adding these objects
+might necessitate a recalculation of memberships in a join table.  Any such
+changes might require that cached calculations be redone.  Touching any object
+in the graph might require a version bump for the concept of the graph as a
+whole.
+
+To make interdependent state changes manageable, GraphMediator wraps an
+additional layer of callbacks around the ActiveRecord save cycle to ensure
+that a save occurs within a GraphMediator.mediated_transaction.
+
+* :before_mediation
+* * save *
+* :after_mediation
+
+The after_mediation callback is itself broken down into three phases:
+
+* :reconciliation - in this phase, any methods which bring the overall state
+  of the graph into balance should be run to adjust for changes made during the
+  save.
+* :cacheing - any calculations which rely on the state of a reconciled graph
+  but which do not themselves alter the graph (in that they are reproducible
+  from existing state) should be made in the cacheing phase.
+* :bumping - if there is a field for tracking the overall version of the
+  graph itself, it can be bumped here.
+
+GraphMediator ensures that after_mediation is run only once within the context
+of a mediated transaction.
+
+== Usage
+
+# * :pen_number
+# * :dingo_count
+# * :biscuit_count
+# * :feed_rate 
+# * :total_biscuit_weight
+# * :dingo_pen_version
+class DingoPen < ActiveRecord::Base
+
+  has_many :dingos
+  has_many :biscuits
+
+  include GraphMediator
+  mediate :purchase_biscuits,
+    :dependencies => [Dingo, Biscuit],
+    :when_reconciling => [:adjust_biscuit_supply, :feed_dingos],
+    :when_cacheing => :calculate_total_biscuit_weight,
+    :bumps => :dingo_pen_version
+
+  or
+
+  mediate :purchase_biscuits,
+    :dependencies => [Dingo, Biscuit], # ensures a mediated_transaction on Dingo#save or Biscuit#save
+    :bumps => :dingo_pen_version       # increments through DingoPen#dingo_pen_version=
+  mediate_reconciles :adjust_biscuit_supply, :feed_dingos
+  mediate_caches do |instance|
+    instance.calculate_total_biscuit_weight
+  end
+  
+  ...
+  
+  def purchase_biscuits; ... end
+  def adjust_biscuit_supply; ... end
+  def feed_dingos; ... end
+  def calculate_total_biscuit_weight; ... end
+end
+
+See spec/examples for real, dingo-free examples.
+
+== Caveats
+
+If you override super in the model hierarchy you are mediating, you must pass your 
+override as a block to super or it will occur outside of mediation:
+
+def save
+  super do
+    my_local_changes
+  end
+end
+
+You are probably better off hooking to before_save or after_save if they 
+suffice.
+
+== Threads
+
+GraphMediator uses thread local variables keep track of open mediators.
+It does not perform any synchronization between threads.
+
+== Advice
+
+Avoid using GraphMediator :).  If there's a clean way to keep a system
+simple without requiring this sort of coordination between related objects
+do that first.
+
+If you have a web of observers/callbacks struggling to maintain state,
+repeated, redundant update calls from observed changes in collection members,
+or are running into lock_version issues within your own updates, then 
+GraphMediator may help.
 
 == Note on Patches/Pull Requests
  
