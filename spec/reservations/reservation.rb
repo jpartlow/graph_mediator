@@ -1,3 +1,7 @@
+require 'reservations/party'
+require 'reservations/lodging'
+require 'reservations/party_lodging'
+
 class Reservation < ActiveRecord::Base
   has_many :parties
   has_many :lodgings

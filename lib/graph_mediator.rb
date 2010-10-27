@@ -2,6 +2,7 @@ require 'active_support/core_ext/class/inheritable_attributes'
 require 'active_support/core_ext/module/attribute_accessors'
 require 'active_support/core_ext/array/extract_options'
 require 'active_support/callbacks'
+require 'graph_mediator/mediator'
 
 # = GraphMediator =
 #
@@ -9,6 +10,18 @@ require 'active_support/callbacks'
 # related to a root node.  See README.rdoc for details.
 #
 # GraphMediator::Base::DSL - is the simple class macro language used to set up mediation.
+#
+# == Convenience Methods for Save Without Mediation
+#
+# There are convenience method to perform a save, save!, toggle,
+# toggle!, update_attribute, update_attributes or update_attributes!
+# call without mediation.  They are of the form <method>_without_mediation<punc>
+# 
+# For example, save_without_mediation! is equivalent to:
+#
+# instance.disable_mediation!
+# instance.save!
+# instance.enable_mediation!
 #
 # == Overriding
 # 
@@ -93,9 +106,20 @@ module GraphMediator
 
   end
 
+  module Util
+    # Returns an array of [<method>,<punctuation>] from a given method symbol.
+    #
+    # parse_method_punctuation(:save) => ['save',nil]
+    # parse_method_punctuation(:save!) => ['save','!']
+    def parse_method_punctuation(method)
+      return method.to_s.sub(/([?!=])$/, ''), $1
+    end
+  end
+
   # All of the working methods for mediation, plus initial call backs.
   module Proxy
-    
+    extend Util
+ 
     module ClassMethods
       # Turn on mediation for all instances of this class. (On by default)
       def enable_all_mediation!
@@ -148,32 +172,21 @@ module GraphMediator
     # You can turn mediation on or off on an instance by instance basis with
     # calls to disable_mediation! or enable_mediation!.
     #
-    # If mediation is disabled at the class level, this supercedes the instance
-    # setting.
+    # Mediation may also be disabled at the class level, but enabling or 
+    # disabling an instance supercedes this.
     def mediation_enabled?
-      self.class.mediation_enabled? && !@graph_mediator_mediation_disabled
+      enabled = @graph_mediator_mediation_disabled.nil? ?
+        self.class.mediation_enabled? :
+        !@graph_mediator_mediation_disabled
     end
 
-    # Convenience method to perform a save without mediating.
-    # Equivalent to:
-    # instance.disable_mediation!
-    # instance.save
-    # instance.enable_mediation!
-    def save_without_mediation
-      disable_mediation!
-      save
-      enable_mediation!
-    end
-
-    # Convenience method to perform a save! without mediating.
-    # Equivalent to:
-    # instance.disable_mediation!
-    # instance.save!
-    # instance.enable_mediation!
-    def save_without_mediation!
-      disable_mediation!
-      save!
-      enable_mediation!
+    %w(destroy save save! toggle toggle! update_attribute update_attributes update_attributes!).each do |method|
+      base, punctuation = parse_method_punctuation(method)
+      define_method("#{base}_without_mediation#{punctuation}") do |*args,&block|
+        disable_mediation!
+        send(method) 
+        enable_mediation!
+      end
     end
 
     protected
@@ -235,9 +248,10 @@ module GraphMediator
 
   # DSL for setting up and describing mediation.
   #
-  # save and save! are automatically wrapped for mediation when GraphMediator is included into
-  # your class.  You can mediate other methods with a call to mediate(), and can setup
-  # callbacks for reconcilation, cacheing or version bumping.
+  # save and save! are automatically wrapped for mediation when GraphMediator
+  # is included into your class.  You can mediate other methods with a call to
+  # mediate(), and can setup callbacks for reconcilation, cacheing or version
+  # bumping.
   #
   # = Callbacks
   #
@@ -264,6 +278,7 @@ module GraphMediator
   # transaction.
   #
   module DSL
+    include Util
 
     # Establishes callbacks, dependencies and possible methods as entry points 
     # for mediation.
@@ -345,7 +360,7 @@ module GraphMediator
     
       # Strip out punctuation on predicates or bang methods since
       # e.g. target?_without_feature is not a valid method name.
-      aliased_target, punctuation = target.to_s.sub(/([?!=])$/, ''), $1
+      aliased_target, punctuation = parse_method_punctuation(target)
       with_method, without_method = "#{aliased_target}_with_#{feature}#{punctuation}", "#{aliased_target}_without_#{feature}#{punctuation}"
 
       method_defined_here = _method_defined(target, false)

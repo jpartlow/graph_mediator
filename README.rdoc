@@ -34,41 +34,41 @@ of a mediated transaction.
 
 == Usage
 
-# * :pen_number
-# * :dingo_count
-# * :biscuit_count
-# * :feed_rate 
-# * :total_biscuit_weight
-# * :dingo_pen_version
-class DingoPen < ActiveRecord::Base
-
-  has_many :dingos
-  has_many :biscuits
-
-  include GraphMediator
-  mediate :purchase_biscuits,
-    :dependencies => [Dingo, Biscuit],
-    :when_reconciling => [:adjust_biscuit_supply, :feed_dingos],
-    :when_cacheing => :calculate_total_biscuit_weight,
-    :bumps => :dingo_pen_version
-
-  or
-
-  mediate :purchase_biscuits,
-    :dependencies => [Dingo, Biscuit], # ensures a mediated_transaction on Dingo#save or Biscuit#save
-    :bumps => :dingo_pen_version       # increments through DingoPen#dingo_pen_version=
-  mediate_reconciles :adjust_biscuit_supply, :feed_dingos
-  mediate_caches do |instance|
-    instance.calculate_total_biscuit_weight
+  # * :pen_number
+  # * :dingo_count
+  # * :biscuit_count
+  # * :feed_rate 
+  # * :total_biscuit_weight
+  # * :dingo_pen_version
+  class DingoPen < ActiveRecord::Base
+  
+    has_many :dingos
+    has_many :biscuits
+  
+    include GraphMediator
+    mediate :purchase_biscuits,
+      :dependencies => [Dingo, Biscuit],
+      :when_reconciling => [:adjust_biscuit_supply, :feed_dingos],
+      :when_cacheing => :calculate_total_biscuit_weight,
+      :bumps => :dingo_pen_version
+  
+    or
+  
+    mediate :purchase_biscuits,
+      :dependencies => [Dingo, Biscuit], # ensures a mediated_transaction on Dingo#save or Biscuit#save
+      :bumps => :dingo_pen_version       # increments through DingoPen#dingo_pen_version=
+    mediate_reconciles :adjust_biscuit_supply, :feed_dingos
+    mediate_caches do |instance|
+      instance.calculate_total_biscuit_weight
+    end
+    
+    ...
+    
+    def purchase_biscuits; ... end
+    def adjust_biscuit_supply; ... end
+    def feed_dingos; ... end
+    def calculate_total_biscuit_weight; ... end
   end
-  
-  ...
-  
-  def purchase_biscuits; ... end
-  def adjust_biscuit_supply; ... end
-  def feed_dingos; ... end
-  def calculate_total_biscuit_weight; ... end
-end
 
 See spec/examples for real, dingo-free examples.
 
@@ -77,11 +77,11 @@ See spec/examples for real, dingo-free examples.
 If you override super in the model hierarchy you are mediating, you must pass your 
 override as a block to super or it will occur outside of mediation:
 
-def save
-  super do
-    my_local_changes
+  def save
+    super do
+      my_local_changes
+    end
   end
-end
 
 You are probably better off hooking to before_save or after_save if they 
 suffice.
