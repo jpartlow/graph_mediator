@@ -55,15 +55,10 @@ module GraphMediator
 
     def initialize_for_mediation(base)
       _include_new_proxy(base)
-
-#      base.class_inheritable_array :__graph_mediator_reconciliation_callbacks, :instance_writer => false
-#      base.class_inheritable_array :__graph_mediator_cacheing_callbacks, :instance_writer => false
-#      base.class_inheritable_accessor :__graph_mediator_bump_callback, :instance_writer => false
       base.class_inheritable_accessor :__graph_mediator_version_column, :instance_writer => false
-#      base.__graph_mediator_reconciliation_callbacks = []
-#      base.__graph_mediator_cacheing_callbacks = []
-
+      base.class_inheritable_accessor :__graph_mediator_enabled, :instance_writer => false
       base.__send__(:_register_for_mediation, :save_without_transactions, :save_without_transactions!)
+      base.__graph_mediator_enabled = true
     end
 
     # Inserts a new #{base}::MediatorProxy module with Proxy included.
@@ -76,14 +71,20 @@ module GraphMediator
       end
       base.const_set(:MediatorProxy, proxy)
       key = base.to_s.underscore.gsub('/','_').upcase
-      key = "GRAPH_MEDIATOR_#{key}_HASH_KEY"
+      hash_key = "GRAPH_MEDIATOR_#{key}_HASH_KEY"
+      new_array_key = "GRAPH_MEDIATOR_#{key}_NEW_ARRAY_KEY"
       proxy.module_eval do
         define_method(:mediator_hash_key) do
-          key
+          hash_key
         end
         protected(:mediator_hash_key)
+        define_method(:mediator_new_array_key) do
+          new_array_key
+        end
+        protected(:mediator_new_array_key)
       end
       base.send(:include, proxy)
+      base.send(:extend, Proxy::ClassMethods)
       # Relies on ActiveSupport::Callbacks (which is included
       # into ActiveRecord::Base) for callback handling.
       base.define_callbacks *CALLBACKS
@@ -94,21 +95,36 @@ module GraphMediator
 
   # All of the working methods for mediation, plus initial call backs.
   module Proxy
+    
+    module ClassMethods
+      # Turn on mediation for all instances of this class. (On by default)
+      def enable_all_mediation!
+        self.__graph_mediator_enabled = true
+      end
 
-    # Called before the ActiveRecord.save cycle is begun.
-    def before_mediation
+      # Turn off mediation for all instances of this class. (Off by default)
+      #
+      # This will cause new mediators to start up disabled, but existing 
+      # mediators will finish normally.
+      def disable_all_mediation!
+        self.__graph_mediator_enabled = false
+      end
+    
+      # True if mediation is enabled at the class level.
+      def mediation_enabled?
+        self.__graph_mediator_enabled
+      end
     end
 
-    # Called after the ActiveRecord.save cycle is completed.
-    def after_mediation
-    end
- 
     # Wraps the given block in a transaction and begins mediation. 
     def mediated_transaction(&block)
       mediator = _get_mediator
       mediator.mediate(&block)
     ensure
-      mediators.delete(self.id) if mediator.idle?
+      if mediator && mediator.idle?
+        mediators.delete(self.id)
+        mediators_for_new_records.delete(mediator)
+      end
     end
  
     # True if there is currently a mediated transaction begun for
@@ -117,13 +133,62 @@ module GraphMediator
       mediators.include?(self.id)
     end
 
+    # Turn off mediation for this instance.  If currently mediating, it
+    # will finish normally, but new mediators will start disabled.
+    def disable_mediation!
+      @graph_mediator_mediation_disabled = true
+    end
+
+    # Turn on mediation for this instance (on by default).
+    def enable_mediation!
+      @graph_mediator_mediation_disabled = false
+    end
+
+    # By default, every instance will be mediated and this will return true.
+    # You can turn mediation on or off on an instance by instance basis with
+    # calls to disable_mediation! or enable_mediation!.
+    #
+    # If mediation is disabled at the class level, this supercedes the instance
+    # setting.
+    def mediation_enabled?
+      self.class.mediation_enabled? && !@graph_mediator_mediation_disabled
+    end
+
+    # Convenience method to perform a save without mediating.
+    # Equivalent to:
+    # instance.disable_mediation!
+    # instance.save
+    # instance.enable_mediation!
+    def save_without_mediation
+      disable_mediation!
+      save
+      enable_mediation!
+    end
+
+    # Convenience method to perform a save! without mediating.
+    # Equivalent to:
+    # instance.disable_mediation!
+    # instance.save!
+    # instance.enable_mediation!
+    def save_without_mediation!
+      disable_mediation!
+      save!
+      enable_mediation!
+    end
+
+    protected
+
     # Unique key to access a thread local hash of mediators for specific
     # #{base}::MediatorProxy type.
     #
     # (This is overwritten by GraphMediator._include_new_proxy)
     def mediator_hash_key; end
 
-    protected
+    # Unique key to access a thread local array of mediators of new records for
+    # specific #{base}::MediatorProxy type.
+    #
+    # (This is overwritten by GraphMediator._include_new_proxy)
+    def mediator_new_array_key; end
 
     # The hash of Mediator instances active in this Thread for the Proxy's 
     # base class.
@@ -137,6 +202,15 @@ module GraphMediator
       Thread.current[mediator_hash_key]
     end
 
+    # An array of Mediator instances mediating new records in this Thread for
+    # the Proxy's base class.
+    def mediators_for_new_records
+      unless Thread.current[mediator_new_array_key]
+        Thread.current[mediator_new_array_key] = []
+      end
+      Thread.current[mediator_new_array_key]
+    end
+
     # Accessor the for the mediator associated with this instance's id, or nil if we are
     # not currently mediating.
     def current_mediator
@@ -146,7 +220,15 @@ module GraphMediator
     private
 
     def _get_mediator
-      mediators[self.id] ||= GraphMediator::Mediator.new(self)
+      mediator = mediators[self.id] 
+      mediator ||= mediators_for_new_records.find { |m| m.mediated_id == self.id }
+      mediator ||= GraphMediator::Mediator.new(self)
+      if new_record?
+        mediators_for_new_records << (mediator = GraphMediator::Mediator.new(self))
+      else
+        mediators[self.id] = mediator
+      end
+      return mediator
     end
 
   end
@@ -237,12 +319,7 @@ module GraphMediator
       methods.each do |method|
         _alias_method_chain_ensuring_inheritability(method, :mediation) do |aliased_target,punctuation|
           __send__(:define_method, "#{aliased_target}_with_mediation#{punctuation}") do |*args, &block|
-            run_callbacks(:before_mediation)
-            __send__("#{aliased_target}_without_mediation#{punctuation}", *args, &block)
-            run_callbacks(:mediate_reconciles)
-            run_callbacks(:mediate_caches)
-            run_callbacks(:mediate_bumps)
-            # TODO work out bump column
+            mediated_transaction { __send__("#{aliased_target}_without_mediation#{punctuation}", *args, &block) }
           end
         end
       end

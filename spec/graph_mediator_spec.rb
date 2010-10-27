@@ -118,23 +118,21 @@ describe "GraphMediator" do
   context "with a defined mediation" do 
 
     def load_thing
+      # make sure we record all callback calls regardless of which instance we're in.
+      @things_callbacks = callbacks_ref = []
       c = Class.new(ActiveRecord::Base)
       Object.const_set(:Thing, c)
       c.class_eval do
         include GraphMediator
-        attr_accessor :callbacks
          
         mediate :when_reconciling => :reconcile, :when_cacheing => :cache, :when_bumping => :bump
         before_mediation :before
      
-        def initialize(*attributes)
-          self.callbacks = []
-          super
-        end 
         def before; callbacks << :before; end
         def reconcile; callbacks << :reconcile; end
         def cache; callbacks << :cache; end
         def bump; callbacks << :bump; end
+        define_method(:callbacks) { callbacks_ref }
       end
     end
 
@@ -147,15 +145,87 @@ describe "GraphMediator" do
       Object.__send__(:remove_const, :Thing)
     end
 
+    it "should be able to disable and enable mediation for the whole class" do
+      Thing.disable_all_mediation!
+      @t.save
+      @t.save!
+      @things_callbacks.should == []
+      Thing.enable_all_mediation!
+      @t.save
+      @t.save!
+      @things_callbacks.should == [:before, :reconcile, :cache, :bump, :before, :reconcile, :cache, :bump,]
+    end
+
+    it "should disable and enable mediation for an instance" do
+      @t.disable_mediation!
+      @t.save
+      @t.save!
+      @things_callbacks.should == []
+      @t.enable_mediation!
+      @t.save
+      @t.save!
+      @things_callbacks.should == [:before, :reconcile, :cache, :bump, :before, :reconcile, :cache, :bump,]
+    end
+
+    it "should have save_without_mediation convenience methods" do
+      @t.save_without_mediation
+      @t.save_without_mediation!
+      @things_callbacks.should == []
+    end
+
+    it "should handle saving a new record" do
+      n = Thing.new(:name => 'new')
+      n.save!
+      @things_callbacks.should == [:before, :reconcile, :cache, :bump]
+    end
+
+    it "should handle updating an existing record" do
+      e = Thing.create!(:name => 'exists')
+      @things_callbacks.clear
+      e.save!
+      @things_callbacks.should == [:before, :reconcile, :cache, :bump]
+    end
+
+    it "should nest mediated transactions" do
+      Thing.class_eval do
+        after_create do |instance|
+          instance.mediated_transaction do
+            instance.callbacks << :nested_create!
+          end
+        end
+        after_save do |instance|
+          instance.mediated_transaction do
+            instance.callbacks << :nested_save!
+          end
+        end
+      end
+      nested = Thing.create!(:name => :nested!)
+      @things_callbacks.should == [:before, :nested_create!, :nested_save!, :reconcile, :cache, :bump]
+    end
+
+    # can't nest before_create.  The second mediated_transaction will occur
+    # before instance has an id, so we have no way to look up a mediator.
+    it "cannot nest mediated transactions before_create" do
+      Thing.class_eval do
+        before_create do |instance|
+          instance.mediated_transaction do
+            instance.callbacks << :nested_before_create!
+          end
+        end
+      end
+      nested = Thing.create!(:name => :nested!)
+      @things_callbacks.should == [:before, :before, :nested_before_create!, :reconcile, :cache, :bump, :reconcile, :cache, :bump]
+    end
+
     it "should override save" do
       @t.save
-      @t.callbacks.should == [:before, :reconcile, :cache, :bump] 
+      @things_callbacks.should == [:before, :reconcile, :cache, :bump] 
       @t.new_record?.should be_false
     end
 
-    it "should override save!" do
+    it "should override save bang" do
       @t.save!
-      @t.callbacks.should == [:before, :reconcile, :cache, :bump] 
+      @things_callbacks.should == [:before, :reconcile, :cache, :bump] 
       @t.new_record?.should be_false
     end
 
@@ -167,7 +237,7 @@ describe "GraphMediator" do
         end
       end
       @t.save
-      @t.callbacks.should == ['...saving...', :before, :reconcile, :cache, :bump] 
+      @things_callbacks.should == ['...saving...', :before, :reconcile, :cache, :bump] 
       @t.new_record?.should be_false
     end
 
@@ -180,7 +250,7 @@ describe "GraphMediator" do
         end
       end
       @t.save
-      @t.callbacks.should == ['...saving...', :before, :reconcile, :cache, :bump] 
+      @things_callbacks.should == ['...saving...', :before, :reconcile, :cache, :bump] 
       @t.new_record?.should be_false
     end
 
@@ -193,7 +263,7 @@ describe "GraphMediator" do
         end
       end
       @t.save
-      @t.callbacks.should == [:before, '...saving...', :reconcile, :cache, :bump] 
+      @things_callbacks.should == [:before, '...saving...', :reconcile, :cache, :bump] 
       @t.new_record?.should be_false
     end
 
@@ -205,22 +275,73 @@ describe "GraphMediator" do
       @f = Foo.new
     end
 
+    it "should get a mediator" do
+      begin 
+        mediator = @f.__send__(:_get_mediator)
+        mediator.should be_kind_of(GraphMediator::Mediator)
+        mediator.mediated_instance.should == @f 
+      ensure
+        @f.__send__(:mediators_for_new_records).clear
+      end
+    end
+
+    it "should get always get a new mediator for a new record" do
+      begin
+        @f.new_record?.should be_true
+        mediator1 = @f.__send__(:_get_mediator)
+        mediator2 = @f.__send__(:_get_mediator)
+        mediator1.should_not equal(mediator2)
+      ensure
+        @f.__send__(:mediators_for_new_records).clear
+      end
+    end
+
+    it "should get the same mediator for a saved record" do
+      begin
+        @f.save_without_mediation
+        @f.new_record?.should be_false
+        mediator1 = @f.__send__(:_get_mediator)
+        mediator2 = @f.__send__(:_get_mediator)
+        mediator1.should equal(mediator2)
+      ensure
+        @f.__send__(:mediators).clear
+      end
+    end
+
+    # @f.create -> calls save, which engages mediation on a new record which has no id.
+    # During the creation process (after_create) @f will have an id.
+    # Other callbacks may create dependent objects, which will attempt to mediate, or
+    # other mediated methods, and these should receive the original mediator if we have
+    # reached after_create stage.
+    it "should get the same mediator for a new record that is saved during mediation" do
+      begin
+        @f.new_record?.should be_true
+        mediator1 = @f.__send__(:_get_mediator)
+        @f.save_without_mediation
+        mediator2 = @f.__send__(:_get_mediator)
+        mediator1.should equal(mediator2)
+      ensure
+        @f.__send__(:mediators_for_new_records).clear
+        @f.__send__(:mediators).clear
+      end
+    end
+
 # TODO - may need to move this up to the class
 
     it "should generate a unique mediator_hash_key for each MediatorProxy" do
       @f.__send__(:mediator_hash_key).should == 'GRAPH_MEDIATOR_FOO_HASH_KEY'
     end
 
+    it "should generate a unique mediator_new_array_key for each MediatorProxy" do
+      @f.__send__(:mediator_new_array_key).should == 'GRAPH_MEDIATOR_FOO_NEW_ARRAY_KEY'
+    end
+ 
+    it "should access an array of mediators for new records" do
+      @f.__send__(:mediators_for_new_records).should == []
+    end
+
     it "should access a hash of mediators" do
       @f.__send__(:mediators).should == {}
-    end
-
-    it "should provide an a before_mediation callback" do
-      @f.should respond_to(:before_mediation)
-    end
-
-    it "should provide an a after_mediation callback" do
-      @f.should respond_to(:after_mediation)
     end
 
   end
