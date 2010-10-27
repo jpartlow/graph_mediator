@@ -304,8 +304,8 @@ module GraphMediator
     #   * :when_cacheing => list of methods to execute during the after_mediation 
     #     cacheing phase
     #   * :when_bumping => method or proc to execute to bump the overall graph version
-    #   * :bumps => alternately, an attribute to increment (ignored if a mediate_bumps callback 
-    #     is set)
+    #   * :bumps => alternately, an attribute to increment (ignored if a
+    #     mediate_bumps callback is set)
     #
     # mediate :update_children,
     #   :dependencies => Child,
@@ -316,13 +316,17 @@ module GraphMediator
       options = methods.extract_options!
       when_bumping = options[:when_bumping]
       bumps = options[:bumps]
-      raise(ArgumentError, "Set either :when_bumping or :bumps, but not both.") if when_bumping && bumps
     
       _register_for_mediation(*methods)
       mediate_reconciles(options[:when_reconciling]) if options[:when_reconciling]
       mediate_caches(options[:when_cacheing]) if options[:when_cacheing]
-      mediate_bumps(options[:when_bumping]) if options[:when_bumping]
-      self.__graph_mediator_version_column = bumps
+      if when_bumping
+        mediate_bumps(when_bumping)
+      elsif bumps
+        mediate_bumps do |instance|
+          instance.update_attribute(bumps, (instance.send(bumps) || 0) + 1)
+        end
+      end
     end
 
     private

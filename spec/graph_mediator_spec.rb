@@ -103,13 +103,15 @@ describe "GraphMediator" do
       Bar.mediate_bumps_callback_chain.should == [:foo] 
     end
 
-    it "should get the bumps option" do
-      Bar.__graph_mediator_version_column.should be_nil
+    it "should create an incrementer for the bumps column" do
       Bar.mediate :bumps => :foo
-      Bar.__graph_mediator_version_column.should == :foo
+      Bar.mediate_bumps_callback_chain.should have(1).elements
     end
- 
-    it "should ignore bumps if mediate_bumps callback is set"
+
+    it "should ignore bumps if mediate_bumps callback is set" do
+      Bar.mediate :when_bumping => :foo, :bumps => :foo_version
+      Bar.mediate_bumps_callback_chain.should == [:foo]
+    end
  
     it "should get the dependencies option"
 
