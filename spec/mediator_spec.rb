@@ -29,6 +29,8 @@ describe "GraphMediator::Mediator" do
     @m.should be_idle
     @m.start!
     @m.should be_mediating
+    @m.bump!
+    @m.should be_versioning
     @m.done!
     @m.should be_idle
     @m.disable!

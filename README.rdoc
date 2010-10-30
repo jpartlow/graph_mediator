@@ -10,6 +10,10 @@ changes might require that cached calculations be redone.  Touching any object
 in the graph might require a version bump for the concept of the graph as a
 whole.
 
+We want changes to be made once, in a single transaction, with a single overall 
+version change.  The version change should be guarded by an optimistic lock
+check to avoid conflicts between two processes updates to the same graph.
+
 To make interdependent state changes manageable, GraphMediator wraps an
 additional layer of callbacks around the ActiveRecord save cycle to ensure
 that a save occurs within a GraphMediator.mediated_transaction.
@@ -26,8 +30,12 @@ The after_mediation callback is itself broken down into three phases:
 * :cacheing - any calculations which rely on the state of a reconciled graph
   but which do not themselves alter the graph (in that they are reproducible
   from existing state) should be made in the cacheing phase.
-* :bumping - if there is a field for tracking the overall version of the
-  graph itself, it can be bumped here.
+* :bumping - if the class as a lock_column set (ActiveRecord::Locking::Optimistic)
+  then the instance will be touched, bumping the lock_version and checking for stale
+  data.
+
+Note, during a mediated_transaction, the lock_column will only update during the 
++bumping+ phase of the after_mediation callback.
 
 GraphMediator ensures that after_mediation is run only once within the context
 of a mediated transaction.
@@ -39,7 +47,7 @@ of a mediated transaction.
   # * :biscuit_count
   # * :feed_rate 
   # * :total_biscuit_weight
-  # * :dingo_pen_version
+  # * :lock_version, :default => 0
   class DingoPen < ActiveRecord::Base
   
     has_many :dingos
@@ -49,14 +57,12 @@ of a mediated transaction.
     mediate :purchase_biscuits,
       :dependencies => [Dingo, Biscuit],
       :when_reconciling => [:adjust_biscuit_supply, :feed_dingos],
-      :when_cacheing => :calculate_total_biscuit_weight,
-      :bumps => :dingo_pen_version
+      :when_cacheing => :calculate_total_biscuit_weight
   
     or
   
     mediate :purchase_biscuits,
       :dependencies => [Dingo, Biscuit], # ensures a mediated_transaction on Dingo#save or Biscuit#save
-      :bumps => :dingo_pen_version       # increments through DingoPen#dingo_pen_version=
     mediate_reconciles :adjust_biscuit_supply, :feed_dingos
     mediate_caches do |instance|
       instance.calculate_total_biscuit_weight
@@ -88,16 +94,14 @@ suffice.
 
 == Threads
 
-GraphMediator uses thread local variables keep track of open mediators.
-It does not perform any synchronization between threads.
+GraphMediator uses thread local variables to keep track of open mediators.
+It should be thread safe but this needs testing.
 
 == Advice
 
-Avoid using GraphMediator :).  If there's a clean way to keep a system
-simple without requiring this sort of coordination between related objects
-do that first.
+Build a simple system first, rather than building a system to use GraphMediator.
 
-If you have a web of observers/callbacks struggling to maintain state,
+But if you have a web of observers/callbacks struggling to maintain state,
 repeated, redundant update calls from observed changes in collection members,
 or are running into lock_version issues within your own updates, then 
 GraphMediator may help.
@@ -109,7 +113,7 @@ GraphMediator may help.
 * Add tests for it. This is important so I don't break it in a
   future version unintentionally.
 * Commit, do not mess with rakefile, version, or history.
-  (if you want to have your own version, that is fine but bump version in a commit by itself I can ignore when I pull)
+  (if you want to have your own version, that is fine but bump version in a commit by itself, so I can ignore when I pull)
 * Send me a pull request. Bonus points for topic branches.
 
 == Copyright

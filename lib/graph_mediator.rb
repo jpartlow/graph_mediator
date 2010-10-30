@@ -11,6 +11,14 @@ require 'graph_mediator/mediator'
 #
 # GraphMediator::Base::DSL - is the simple class macro language used to set up mediation.
 #
+# == Versioning and Optimistic Locking
+#
+# If you include an integer +lock_version+ column in your class, it will be incremented
+# only once within a mediated_transaction and will serve as the optimistic locking check
+# for the entire graph so long as you have declared all your dependent models for mediation.
+#
+# Outside of a mediated_transaction, +lock_version+ will increment per update as usual.
+#
 # == Convenience Methods for Save Without Mediation
 #
 # There are convenience method to perform a save, save!, toggle,
@@ -68,36 +76,34 @@ module GraphMediator
 
     def initialize_for_mediation(base)
       _include_new_proxy(base)
-      base.class_inheritable_accessor :__graph_mediator_version_column, :instance_writer => false
       base.class_inheritable_accessor :__graph_mediator_enabled, :instance_writer => false
-      base.__send__(:_register_for_mediation, :save_without_transactions, :save_without_transactions!)
       base.__graph_mediator_enabled = true
+      base.__send__(:_register_for_mediation, :save_without_transactions, :save_without_transactions!)
     end
 
     # Inserts a new #{base}::MediatorProxy module with Proxy included.
     # All callbacks are defined in here for easy overriding in the Base
     # class.
     def _include_new_proxy(base)
+      # XXX How can _include_new_proxy be made cleaner or at least clearer?
       proxy = Module.new do
         include ActiveSupport::Callbacks
         include Proxy
       end
       base.const_set(:MediatorProxy, proxy)
+
+      base.send(:include, proxy)
+      base.send(:extend, Proxy::ClassMethods)
+
       key = base.to_s.underscore.gsub('/','_').upcase
       hash_key = "GRAPH_MEDIATOR_#{key}_HASH_KEY"
       new_array_key = "GRAPH_MEDIATOR_#{key}_NEW_ARRAY_KEY"
-      proxy.module_eval do
-        define_method(:mediator_hash_key) do
-          hash_key
-        end
-        protected(:mediator_hash_key)
-        define_method(:mediator_new_array_key) do
-          new_array_key
-        end
-        protected(:mediator_new_array_key)
+      eigen = base.instance_eval { class << self; self; end }
+      eigen.class_eval do
+        define_method(:mediator_hash_key) { hash_key }
+        define_method(:mediator_new_array_key) { new_array_key }
       end
-      base.send(:include, proxy)
-      base.send(:extend, Proxy::ClassMethods)
+
       # Relies on ActiveSupport::Callbacks (which is included
       # into ActiveRecord::Base) for callback handling.
       base.define_callbacks *CALLBACKS
@@ -138,6 +144,64 @@ module GraphMediator
       def mediation_enabled?
         self.__graph_mediator_enabled
       end
+
+      # True if we are currently mediating instances of any of the passed ids.
+      def currently_mediating?(ids)
+        Array(ids).detect do |id|
+          mediators[id] || mediators_for_new_records.find { |m| m.mediated_id == id }
+        end
+      end
+
+      # Overrides ActiveRecord::Base.update_counters to skip locking if currently mediating
+      # the passed id.
+      def update_counters(ids, counters)
+        # id may be an array of ids...
+        unless currently_mediating?(ids)
+          # if none are being mediated can proceed as normal
+          super
+        else
+          # we have to go one by one unfortunately
+          Array(ids).each do |id|
+            currently_mediating?(id) ?
+              update_counters_without_lock(id, counters) :
+              super
+          end
+        end
+      end
+
+      # Unique key to access a thread local hash of mediators for specific
+      # #{base}::MediatorProxy type.
+      #
+      # (This is overwritten by GraphMediator._include_new_proxy)
+      def mediator_hash_key; end
+
+      # Unique key to access a thread local array of mediators of new records for
+      # specific #{base}::MediatorProxy type.
+      #
+      # (This is overwritten by GraphMediator._include_new_proxy)
+      def mediator_new_array_key; end
+
+      # The hash of Mediator instances active in this Thread for the Proxy's 
+      # base class.
+      #
+      # instance.id => Mediator of (instance)
+      #
+      def mediators
+        unless Thread.current[mediator_hash_key]
+          Thread.current[mediator_hash_key] = {}
+        end
+        Thread.current[mediator_hash_key]
+      end
+
+      # An array of Mediator instances mediating new records in this Thread for
+      # the Proxy's base class.
+      def mediators_for_new_records
+        unless Thread.current[mediator_new_array_key]
+          Thread.current[mediator_new_array_key] = []
+        end
+        Thread.current[mediator_new_array_key]
+      end
+
     end
 
     # Wraps the given block in a transaction and begins mediation. 
@@ -154,7 +218,12 @@ module GraphMediator
     # True if there is currently a mediated transaction begun for
     # this instance.
     def currently_mediating?
-      mediators.include?(self.id)
+      !current_mediator.nil?
+    end
+
+    # Returns the state of the current_mediator or nil.
+    def current_mediation_phase
+      current_mediator.try(:aasm_current_state)
     end
 
     # Turn off mediation for this instance.  If currently mediating, it
@@ -180,6 +249,21 @@ module GraphMediator
         !@graph_mediator_mediation_disabled
     end
 
+    # Overrides ActiveRecord::Locking::Optimistic#locking_enabled?
+    #
+    # * True if we are not in a mediated_transaction and lock_enabled? is true
+    # per ActiveRecord (lock_column exists and lock_optimistically? true)
+    # * True if we are in a mediated_transaction and lock_enabled? is true per
+    # ActiveRecord and we are in the midst the version bumping phase of the transaction.
+    # 
+    # Effectively this ensures that an optimistic lock check and version bump
+    # occurs as usual outside of mediation but only at the end of the
+    # transaction within mediation.
+    def locking_enabled?
+      locking_enabled = super
+      locking_enabled &&= current_mediation_phase == :versioning if currently_mediating?
+    end
+
     %w(destroy save save! toggle toggle! update_attribute update_attributes update_attributes!).each do |method|
       base, punctuation = parse_method_punctuation(method)
       define_method("#{base}_without_mediation#{punctuation}") do |*args,&block|
@@ -191,50 +275,26 @@ module GraphMediator
 
     protected
 
-    # Unique key to access a thread local hash of mediators for specific
-    # #{base}::MediatorProxy type.
-    #
-    # (This is overwritten by GraphMediator._include_new_proxy)
-    def mediator_hash_key; end
-
-    # Unique key to access a thread local array of mediators of new records for
-    # specific #{base}::MediatorProxy type.
-    #
-    # (This is overwritten by GraphMediator._include_new_proxy)
-    def mediator_new_array_key; end
-
-    # The hash of Mediator instances active in this Thread for the Proxy's 
-    # base class.
-    #
-    # instance.id => Mediator of (instance)
-    #
     def mediators
-      unless Thread.current[mediator_hash_key]
-        Thread.current[mediator_hash_key] = {}
-      end
-      Thread.current[mediator_hash_key]
+      self.class.mediators
     end
-
-    # An array of Mediator instances mediating new records in this Thread for
-    # the Proxy's base class.
+  
     def mediators_for_new_records
-      unless Thread.current[mediator_new_array_key]
-        Thread.current[mediator_new_array_key] = []
-      end
-      Thread.current[mediator_new_array_key]
+      self.class.mediators_for_new_records
     end
 
-    # Accessor the for the mediator associated with this instance's id, or nil if we are
+    # Accessor for the mediator associated with this instance's id, or nil if we are
     # not currently mediating.
     def current_mediator
-      mediators[self.id]
+      mediator = mediators[self.id] 
+      mediator ||= mediators_for_new_records.find { |m| m.mediated_instance.equal?(self) || m.mediated_id == self.id }
     end 
 
     private
 
+    # Gets the current mediator or initializes a new one.
     def _get_mediator
-      mediator = mediators[self.id] 
-      mediator ||= mediators_for_new_records.find { |m| m.mediated_id == self.id }
+      mediator = current_mediator
       mediator ||= GraphMediator::Mediator.new(self)
       if new_record?
         mediators_for_new_records << (mediator = GraphMediator::Mediator.new(self))
@@ -264,7 +324,7 @@ module GraphMediator
   # * mediate_reconciles - after saveing the instance, run any routines to make further 
   #   adjustments to the structure of the graph or non-cache attributes
   # * mediate_caches - routines for updating cache values
-  # * mediate_bumps - increment the graph version
+  # * mediate_bumps - optimistic locking check and increment the graph version
   #
   # Example: 
   #
@@ -291,8 +351,7 @@ module GraphMediator
     # perform bulk operations on members, you probably want to list them
     # here so that they are mediated as well.
     #
-    # You should not list methods used for reconcilation, cacheing or version
-    # bumping.
+    # You should not list methods used for reconcilation, or cacheing.
     #
     # This macro takes a number of options:
     # 
@@ -303,30 +362,23 @@ module GraphMediator
     #     reconcilation phase
     #   * :when_cacheing => list of methods to execute during the after_mediation 
     #     cacheing phase
-    #   * :when_bumping => method or proc to execute to bump the overall graph version
-    #   * :bumps => alternately, an attribute to increment (ignored if a
-    #     mediate_bumps callback is set)
     #
     # mediate :update_children,
     #   :dependencies => Child,
     #   :when_reconciling => :reconcile,
     #   :when_caching => :cache 
     #
+    # = Versioning and Optimistic Locking
+    #
+    # GraphMediator uses the classes lock_column (default +lock_version+) for versioning and
+    # locks checks during mediation.  It is incremented only once during a mediated_transaction.
+    # 
     def mediate(*methods)
       options = methods.extract_options!
-      when_bumping = options[:when_bumping]
-      bumps = options[:bumps]
     
       _register_for_mediation(*methods)
       mediate_reconciles(options[:when_reconciling]) if options[:when_reconciling]
       mediate_caches(options[:when_cacheing]) if options[:when_cacheing]
-      if when_bumping
-        mediate_bumps(when_bumping)
-      elsif bumps
-        mediate_bumps do |instance|
-          instance.update_attribute(bumps, (instance.send(bumps) || 0) + 1)
-        end
-      end
     end
 
     private

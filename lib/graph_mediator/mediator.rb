@@ -12,16 +12,20 @@ module GraphMediator
     aasm_initial_state :idle
     aasm_state :idle
     aasm_state :mediating
+    aasm_state :versioning
     aasm_state :disabled
 
     aasm_event :start do
       transitions :from => :idle, :to => :mediating
     end
+    aasm_event :bump do
+      transitions :from => :mediating, :to => :versioning
+    end
     aasm_event :disable do
       transitions :from => :idle, :to => :disabled
     end
     aasm_event :done do
-      transitions :from => [:mediating, :disabled], :to => :idle
+      transitions :from => [:mediating, :versioning, :disabled], :to => :idle
     end
 
     def initialize(instance)
@@ -68,7 +72,8 @@ module GraphMediator
       result = yield
       mediated_instance.run_callbacks(:mediate_reconciles)
       mediated_instance.run_callbacks(:mediate_caches)
-      mediated_instance.run_callbacks(:mediate_bumps)
+      bump!
+      mediated_instance.touch if mediated_instance.class.locking_enabled?
       # TODO work out bump column
       return result
     end

@@ -13,7 +13,6 @@ create_schema do |conn|
     t.integer :biscuit_maximum
     t.float :total_biscuits
     t.float :total_biscuit_weight
-    t.integer :dingo_pen_version
     t.integer :lock_version, :default => 0
     t.timestamps
   end
@@ -75,8 +74,7 @@ class DingoPen < ActiveRecord::Base
   mediate :purchase_biscuits,
     :dependencies => [Dingo, Biscuit],
     :when_reconciling => [:adjust_biscuit_supply, :feed_dingos],
-    :when_cacheing => :calculate_biscuit_totals,
-    :bumps => :dingo_pen_version
+    :when_cacheing => :calculate_biscuit_totals
   
   def adjust_biscuit_supply
     biscuits.each do |b|
@@ -122,7 +120,7 @@ describe "DingoPen" do
 
   it "should create" do
     dp = DingoPen.create!(@dingo_pen_attributes)
-    dp.dingo_pen_version.should == 1
+    dp.lock_version.should == 1
   end
 
   it "should create with dingos and biscuits" do
@@ -132,7 +130,51 @@ describe "DingoPen" do
     dp.biscuits << BigBiscuit.new(:amount => 35, :weight => 2.0)
     dp.biscuits << LittleBiscuit.new(:amount => 75, :weight => 0.5)
     dp.save!
-    dp.dingo_pen_version.should == 1
-    pp dp
+    dp.lock_version.should == 1
+  end
+
+  # Shouldn't fail on new, because no one else has should have a handle on the instance yet.
+  context "locking scenarios on create" do
+
+    it "should succeed" do
+      # because the rows do not exist until the mediation transaction completes
+      # so no one else is in a position to write first
+      dp = DingoPen.new(@dingo_pen_attributes)
+      dp.dingos << Dingo.new(:name => "Spot", :breed => "Patagonian Leopard Dingo", :voracity => 10)
+      dp.dingos << Dingo.new(:name => "Foo", :breed => "Theoretical Testing Dingo", :voracity => 5)
+      dp.biscuits << BigBiscuit.new(:amount => 35, :weight => 2.0)
+      dp.biscuits << LittleBiscuit.new(:amount => 75, :weight => 0.5)
+      dp.save!
+    end
+
+    it "has the potential for overwriting if mediation off" do
+      begin
+        DingoPen.disable_all_mediation!
+        dp = DingoPen.new(@dingo_pen_attributes)
+        dp.dingos << Dingo.new(:name => "Spot", :breed => "Patagonian Leopard Dingo", :voracity => 10)
+        dp.dingos << Dingo.new(:name => "Foo", :breed => "Theoretical Testing Dingo", :voracity => 5)
+        dp.biscuits << BigBiscuit.new(:amount => 35, :weight => 2.0)
+        dp.biscuits << LittleBiscuit.new(:amount => 75, :weight => 0.5)
+        dp.save!
+        dp.reload
+        dp.calculate_biscuit_totals
+        !dp.lock_version.should == 1
+raise('finish me')
+        pp dp
+        dp.reload
+        pp dp
+      ensure
+        DingoPen.enable_all_mediation!
+      end
+    end
+
+  end
+
+  context "locking scenarios on update" do
+    it "should test update"
+  end
+
+  context "locking scenarios on delete" do
+    it "should test delete"
   end
 end
