@@ -3,18 +3,50 @@ require File.expand_path(File.join(File.dirname(__FILE__), 'spec_helper'))
 create_schema do |conn|
   conn.create_table(:foos, :force => true) do |t|
     t.string :foo
+    t.integer :lock_version, :default => 0
+    t.timestamps
   end
 
   conn.create_table(:bars, :force => true) do |t|
     t.string :bar
+    t.integer :lock_version, :default => 0
+    t.timestamps
   end
   
   conn.create_table(:things, :force => true) do |t|
+    t.string :name
+    t.integer :lock_version, :default => 0
+    t.timestamps
+  end
+
+  conn.create_table(:untimestamped_things, :force => true) do |t|
+    t.string :name
+    t.integer :lock_version, :default => 0
+  end
+
+  conn.create_table(:unlocked_things, :force => true) do |t|
+    t.string :name
+    t.timestamps
+  end
+
+  conn.create_table(:plain_things, :force => true) do |t|
     t.string :name
   end
 end
 
 class Foo < ActiveRecord::Base
+  include GraphMediator
+end
+
+class UntimestampedThing < ActiveRecord::Base
+  include GraphMediator
+end
+
+class UnlockedThing < ActiveRecord::Base
+  include GraphMediator
+end
+
+class PlainThing < ActiveRecord::Base
   include GraphMediator
 end
 
@@ -95,7 +127,14 @@ describe "GraphMediator" do
       Bar.mediate_caches_callback_chain.should have(4).elements
     end
  
-    it "should get the dependencies option"
+    it "should get the dependencies option" do
+      begin
+        class ::Child < ActiveRecord::Base; end
+        Bar.mediate :dependencies => Child
+      ensure
+        Object.__send__(:remove_const, :Child) 
+      end
+    end
 
   end
 
@@ -183,12 +222,13 @@ describe "GraphMediator" do
         end
       end
       nested = Thing.create!(:name => :nested!)
-      @things_callbacks.should == [:before, :nested_create!, :nested_save!, :reconcile, :cache,]
+      @things_callbacks.should == [:before, :nested_create!, :nested_save!, :reconcile, :cache, :nested_save!]
+      # The final nested save is the touch and lock_version bump
     end
 
     # can't nest before_create.  The second mediated_transaction will occur
     # before instance has an id, so we have no way to look up a mediator.
-    it "cannot nest mediated transactions before_create" do
+    it "cannot nest mediated transactions before_create if versioning" do
       Thing.class_eval do
         before_create do |instance|
           instance.mediated_transaction do
@@ -196,8 +236,8 @@ describe "GraphMediator" do
           end
         end
       end
-      nested = Thing.create!(:name => :nested!)
-      @things_callbacks.should == [:before, :before, :nested_before_create!, :reconcile, :cache, :reconcile, :cache,]
+      lambda { nested = Thing.create!(:name => :nested!) }.should raise_error(GraphMediator::MediatorException)
+      #@things_callbacks.should == [:before, :before, :nested_before_create!, :reconcile, :cache, :reconcile, :cache,]
     end
 
     it "should override save" do
@@ -258,6 +298,22 @@ describe "GraphMediator" do
       @f = Foo.new
     end
 
+    it "cannot update lock_version without timestamps" do
+      t = UntimestampedThing.create!(:name => 'one')
+      t.lock_version.should == 0
+      t.touch
+      t.lock_version.should == 0
+      t.mediated_transaction {}
+      t.lock_version.should == 0
+    end
+
+    it "should update lock_version on touch if instance has timestamps" do
+      @f.save!
+      @f.lock_version.should == 1
+      @f.touch
+      @f.lock_version.should == 2
+    end
+
     it "should get a mediator" do
       begin 
         mediator = @f.__send__(:_get_mediator)
@@ -268,7 +324,7 @@ describe "GraphMediator" do
       end
     end
 
-    it "should get always get a new mediator for a new record" do
+    it "should always get a new mediator for a new record" do
       begin
         @f.new_record?.should be_true
         mediator1 = @f.__send__(:_get_mediator)

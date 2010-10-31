@@ -4,7 +4,8 @@ require_reservations
 
 class Reservation
   include GraphMediator
-  mediate :when_reconciling => :reconcile,
+  mediate :dependencies => [Lodging, Party], 
+    :when_reconciling => :reconcile,
     :when_cacheing => :cache
   def reconcile; :reconcile; end
   def cache; :cache; end
@@ -16,6 +17,10 @@ describe "GraphMediator locking scenarios" do
     @today = Date.today
     @handle1_r1 = Reservation.create!(:starts => @today, :ends => @today + 1, :name => 'foo')
     @handle2_r1 = Reservation.find(@handle1_r1.id)
+  end
+
+  it "should be possible to create an unattached dependent object" do
+    Lodging.create!.should_not be_nil
   end
 
   context "with optimistic locking for the graph" do
@@ -42,8 +47,10 @@ describe "GraphMediator locking scenarios" do
     context "with children" do
       
       before(:each) do
-        @handle1_r1.parties.create(:name => 'Bob')
-        @handle1_r1.parties.create(:name => 'Joe')
+        @handle1_r1.mediated_transaction do
+          @handle1_r1.parties.create(:name => 'Bob')
+          @handle1_r1.parties.create(:name => 'Joe')
+        end
         @handle2_r1.reload
       end
 
@@ -54,17 +61,13 @@ describe "GraphMediator locking scenarios" do
  
       it "should raise Stale conflicts updating just children" do
         @handle2_r1.parties.first.update_attributes(:name => 'Frank')
-        lambda { @handle1_r1.parties.last.update_attributes(:name => 'Billy') }.should raise_error(ActiveRecord::StaleObjectError)
+        # version has incremented because of update to party, so, :versioning touch fails
+        lambda { @handle1_r1.mediated_transaction {} }.should raise_error(ActiveRecord::StaleObjectError)
       end
 
       it "should raise Stale for conflicts deleting children and touching root" do
         @handle2_r1.parties.first.destroy
         lambda { @handle1_r1.update_attributes(:name => 'baz') }.should raise_error(ActiveRecord::StaleObjectError)
-      end
-
-      it "should raise Stale for conflicts deleting just children" do
-        @handle2_r1.parties.first.destroy
-        lambda { @handle1_r1.parties.last.update_attributes(:name => 'Billy') }.should raise_error(ActiveRecord::StaleObjectError)
       end
 
     end
@@ -80,6 +83,53 @@ describe "GraphMediator locking scenarios" do
         end
       end
     end
+  end
+end
+
+describe "GraphMediator locking scenarios for classes without counter_caches" do
+
+  create_schema do |connection|
+    connection.create_table(:foos) do |t|
+      t.string :name
+      t.integer :lock_version, :default => 0
+      t.timestamps
+    end
+
+    connection.create_table(:bars) do |t|
+      t.string :name
+      t.belongs_to :foo
+      t.integer :lock_version, :default => 0
+      t.timestamps
+    end
+  end
+
+  class Bar < ActiveRecord::Base
+    belongs_to :foo
+  end
+
+  class Foo < ActiveRecord::Base
+    include GraphMediator
+    mediate :dependencies => Bar
+    has_many :bars
+  end
+
+  before(:each) do
+    @h1_foo1 = Foo.create(:name => 'one')
+    @h2_foo1 = Foo.find(@h1_foo1.id)
+  end
+
+  it "should also raise Stale for conflicts updating root" do
+# nothing to touch...
+    @h2_foo1.update_attributes(:name => 'bar')
+    lambda { @h1_foo1.update_attributes(:name => 'baz') }.should raise_error(ActiveRecord::StaleObjectError)
+    @h1_foo1.reload
+    @h1_foo1.name.should == 'bar' 
+  end
+
+  it "should raise Stale for conflicts deleting children and touching root" do
+    @h1_foo1.bars << Bar.create! 
+    @h2_foo1.bars.first.destroy
+    lambda { @h1_foo1.update_attributes(:name => 'baz') }.should raise_error(ActiveRecord::StaleObjectError)
   end
 
 end

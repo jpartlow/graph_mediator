@@ -30,12 +30,17 @@ The after_mediation callback is itself broken down into three phases:
 * :cacheing - any calculations which rely on the state of a reconciled graph
   but which do not themselves alter the graph (in that they are reproducible
   from existing state) should be made in the cacheing phase.
-* :bumping - if the class as a lock_column set (ActiveRecord::Locking::Optimistic)
-  then the instance will be touched, bumping the lock_version and checking for stale
+* :bumping - if the class has a +lock_column+ set
+  (ActiveRecord::Locking::Optimistic) and has on +updated_at/on+ timestamp then
+  the instance will be touched, bumping the +lock_column+ and checking for stale
   data.
 
-Note, during a mediated_transaction, the lock_column will only update during the 
+During a mediated_transaction, the +lock_column+ will only update during the 
 +bumping+ phase of the after_mediation callback.
+
+But if there is no +update_at/on+ timestamp, then +lock_column+ cannot be
+incremented when dependent objects are updated.  This is because there is 
+nothing to touch on the root record to trigger the +lock_column+ update.
 
 GraphMediator ensures that after_mediation is run only once within the context
 of a mediated transaction.
@@ -47,7 +52,8 @@ of a mediated transaction.
   # * :biscuit_count
   # * :feed_rate 
   # * :total_biscuit_weight
-  # * :lock_version, :default => 0
+  # * :lock_version, :default => 0 # required for versioning
+  # * :updated_at                  # required for versioning
   class DingoPen < ActiveRecord::Base
   
     has_many :dingos
@@ -80,6 +86,12 @@ See spec/examples for real, dingo-free examples.
 
 == Caveats
 
+A lock_column and timestamp are not required, but without both columns in your schema
+there will be no versioning.
+
++A lock_column by itself *without* a timestamp will not increment and will not provide
+any optimistic locking in a class including GraphMediator!+
+
 If you override super in the model hierarchy you are mediating, you must pass your 
 override as a block to super or it will occur outside of mediation:
 
@@ -103,7 +115,7 @@ Build a simple system first, rather than building a system to use GraphMediator.
 
 But if you have a web of observers/callbacks struggling to maintain state,
 repeated, redundant update calls from observed changes in collection members,
-or are running into lock_version issues within your own updates, then 
+or are running into +lock_column+ issues within your own updates, then 
 GraphMediator may help.
 
 == Note on Patches/Pull Requests

@@ -51,6 +51,9 @@ module GraphMediator
         yield
       end
       return result
+    rescue SystemStackError => e
+      # out of control recursion, probably from trying to touch a new record in a before_create?
+      raise(GraphMediator::MediatorException, "SystemStackError (#{e}).  Is there an attempt to call a mediated_transaction in a before_create callback?")
     end
 
     private

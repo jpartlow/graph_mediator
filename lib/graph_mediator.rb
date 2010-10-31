@@ -57,6 +57,7 @@ module GraphMediator
   self.enable_mediation = true
 
   CALLBACKS = [:before_mediation, :mediate_reconciles, :mediate_caches, :mediate_bumps]
+  SAVE_METHODS = [:save_without_transactions, :save_without_transactions!]
  
   # We want lib/graph_mediator to define GraphMediator constant
   require 'graph_mediator/mediator'
@@ -78,7 +79,7 @@ module GraphMediator
       _include_new_proxy(base)
       base.class_inheritable_accessor :__graph_mediator_enabled, :instance_writer => false
       base.__graph_mediator_enabled = true
-      base.__send__(:_register_for_mediation, :save_without_transactions, :save_without_transactions!)
+      base.__send__(:_register_for_mediation, *SAVE_METHODS)
     end
 
     # Inserts a new #{base}::MediatorProxy module with Proxy included.
@@ -262,6 +263,7 @@ module GraphMediator
     def locking_enabled?
       locking_enabled = super
       locking_enabled &&= current_mediation_phase == :versioning if currently_mediating?
+      locking_enabled
     end
 
     %w(destroy save save! toggle toggle! update_attribute update_attributes update_attributes!).each do |method|
@@ -306,91 +308,30 @@ module GraphMediator
 
   end
 
-  # DSL for setting up and describing mediation.
-  #
-  # save and save! are automatically wrapped for mediation when GraphMediator
-  # is included into your class.  You can mediate other methods with a call to
-  # mediate(), and can setup callbacks for reconcilation, cacheing or version
-  # bumping.
-  #
-  # = Callbacks
-  #
-  # The mediate() method takes options to set callbacks.  Or you can set them directly with
-  # a method symbol, array of method symbols or a Proc.  They may be called multiple times
-  # and may be added to in subclasses.
-  #
-  # * before_mediation - runs before mediation is begun
-  # * - mediate and save
-  # * mediate_reconciles - after saveing the instance, run any routines to make further 
-  #   adjustments to the structure of the graph or non-cache attributes
-  # * mediate_caches - routines for updating cache values
-  # * mediate_bumps - optimistic locking check and increment the graph version
-  #
-  # Example: 
-  #
-  # mediate_reconciles :bar do |instance|
-  #   instance.something_else
-  # end
-  # mediate_reconciles :baz
-  #
-  # will ensure that [:bar, <block>, :baz] are run in 
-  # sequence after :foo is done saveing within the context of a mediated
-  # transaction.
-  #
-  module DSL
+  module AliasExtension
     include Util
-
-    # Establishes callbacks, dependencies and possible methods as entry points 
-    # for mediation.
-    #
-    # * :methods => list of methods to mediate (automatically wrap in a
-    # mediated_transaction call)
-    #
-    # ActiveRecord::Base.save is decorated for mediation when GraphMediator
-    # is included into your model.  If you have additional methods which 
-    # perform bulk operations on members, you probably want to list them
-    # here so that they are mediated as well.
-    #
-    # You should not list methods used for reconcilation, or cacheing.
-    #
-    # This macro takes a number of options:
-    # 
-    # * :options => hash of options
-    #   * :dependencies => list of dependent member classes whose save methods
-    #     should be decorated for mediation as well.
-    #   * :when_reconciling => list of methods to execute during the after_mediation 
-    #     reconcilation phase
-    #   * :when_cacheing => list of methods to execute during the after_mediation 
-    #     cacheing phase
-    #
-    # mediate :update_children,
-    #   :dependencies => Child,
-    #   :when_reconciling => :reconcile,
-    #   :when_caching => :cache 
-    #
-    # = Versioning and Optimistic Locking
-    #
-    # GraphMediator uses the classes lock_column (default +lock_version+) for versioning and
-    # locks checks during mediation.  It is incremented only once during a mediated_transaction.
-    # 
-    def mediate(*methods)
-      options = methods.extract_options!
-    
-      _register_for_mediation(*methods)
-      mediate_reconciles(options[:when_reconciling]) if options[:when_reconciling]
-      mediate_caches(options[:when_cacheing]) if options[:when_cacheing]
-    end
 
     private
 
     # Wraps each method in a mediated_transaction call.
     # The original method is aliased as :method_without_mediation so that it can be
     # overridden separately if needed.
+    #
+    # * options:
+    #   * :through => root node accessor that will be the target of the mediated_transaction.
+    #   By default self is assumed.
     def _register_for_mediation(*methods)
+      options = methods.extract_options!
+      root_node_accessor = options[:through]
       methods.each do |method|
         _alias_method_chain_ensuring_inheritability(method, :mediation) do |aliased_target,punctuation|
           __send__(:define_method, "#{aliased_target}_with_mediation#{punctuation}") do |*args, &block|
-            mediated_transaction { __send__("#{aliased_target}_without_mediation#{punctuation}", *args, &block) }
+            root_node = (root_node_accessor ? send(root_node_accessor) : self)
+            unless root_node.nil?
+              root_node.mediated_transaction { __send__("#{aliased_target}_without_mediation#{punctuation}", *args, &block) }
+            else
+              __send__("#{aliased_target}_without_mediation#{punctuation}", *args, &block)
+            end
           end
         end
       end
@@ -413,7 +354,7 @@ module GraphMediator
     # raise a MediatorException
     def _alias_method_chain_ensuring_inheritability(target, feature, &block)
       raise(MediatorException, "Method #{target} has not been defined yet.") unless _method_defined(target)
-    
+ 
       # Strip out punctuation on predicates or bang methods since
       # e.g. target?_without_feature is not a valid method name.
       aliased_target, punctuation = parse_method_punctuation(target)
@@ -446,4 +387,100 @@ module GraphMediator
     end
  
   end 
+
+  # DSL for setting up and describing mediation.
+  #
+  # save and save! are automatically wrapped for mediation when GraphMediator
+  # is included into your class.  You can mediate other methods with a call to
+  # mediate(), and can setup callbacks for reconcilation, cacheing or version
+  # bumping.
+  #
+  # = Callbacks
+  #
+  # The mediate() method takes options to set callbacks.  Or you can set them directly with
+  # a method symbol, array of method symbols or a Proc.  They may be called multiple times
+  # and may be added to in subclasses.
+  #
+  # * before_mediation - runs before mediation is begun
+  # * - mediate and save
+  # * mediate_reconciles - after saveing the instance, run any routines to make further 
+  #   adjustments to the structure of the graph or non-cache attributes
+  # * mediate_caches - routines for updating cache values
+  #
+  # Example: 
+  #
+  # mediate_reconciles :bar do |instance|
+  #   instance.something_else
+  # end
+  # mediate_reconciles :baz
+  #
+  # will ensure that [:bar, <block>, :baz] are run in 
+  # sequence after :foo is done saveing within the context of a mediated
+  # transaction.
+  #
+  module DSL
+    include AliasExtension
+
+    # Establishes callbacks, dependencies and possible methods as entry points 
+    # for mediation.
+    #
+    # * :methods => list of methods to mediate (automatically wrap in a
+    # mediated_transaction call)
+    #
+    # ActiveRecord::Base.save is decorated for mediation when GraphMediator
+    # is included into your model.  If you have additional methods which 
+    # perform bulk operations on members, you probably want to list them
+    # here so that they are mediated as well.
+    #
+    # You should not list methods used for reconcilation, or cacheing.
+    #
+    # This macro takes a number of options:
+    # 
+    # * :options => hash of options
+    #   * :dependencies => list of dependent member classes whose save methods
+    #     should be decorated for mediation as well.
+    #   * :when_reconciling => list of methods to execute during the after_mediation 
+    #     reconcilation phase
+    #   * :when_cacheing => list of methods to execute during the after_mediation 
+    #     cacheing phase
+    #
+    # mediate :update_children,
+    #   :dependencies => Child,
+    #   :when_reconciling => :reconcile,
+    #   :when_caching => :cache 
+    #
+    # = Dependent Classes
+    #
+    # Dependent classes have their save methods mediated as well.  However, a
+    # dependent class must provide an accessor for the root node, so that a
+    # mediated_transaction can be begun in the root node when a dependent is
+    # changed.
+    #
+    # = Versioning and Optimistic Locking
+    #
+    # GraphMediator uses the class's lock_column (default +lock_version+) and
+    # +updated_at+ or +updated_on+ for versioning and locks checks during
+    # mediation.  The lock_column is incremented only once during a mediated_transaction.
+    # 
+    # +Unless both these columns are present in the schema, versioning/locking
+    # will not happen.+  A lock_column by itself will not be updated unless
+    # there is an updated_at/on timestamp available to touch.
+    # 
+    def mediate(*methods)
+      options = methods.extract_options!
+      dependencies = options[:dependencies] || []
+ 
+      _register_for_mediation(*methods)
+      Array(dependencies).each do |dependent_class|
+        dependent_class.send(:extend, AliasExtension) unless dependent_class.include?(AliasExtension)
+        methods = SAVE_METHODS.clone
+        methods << :destroy
+        methods << { :through => self.class_of_active_record_descendant(self).to_s.underscore }
+        dependent_class.send(:_register_for_mediation, *methods)
+      end
+      mediate_reconciles(options[:when_reconciling]) if options[:when_reconciling]
+      mediate_caches(options[:when_cacheing]) if options[:when_cacheing]
+    end
+
+  end
 end

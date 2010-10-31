@@ -45,6 +45,16 @@ describe "GraphMediator::Mediator" do
     @m.mediation_enabled?.should be_false
   end
 
+  it "should raise a MediatorException if attempt a transaction before_create because save is called recursively" do
+    begin
+      Reservation.before_create { |i| i.mediated_transaction {} }
+      r = Reservation.new(:starts => @today, :ends => @today + 1, :name => :foo)
+      lambda { r.save! }.should raise_error(GraphMediator::MediatorException)
+    ensure
+      Reservation.before_create_callback_chain.clear
+    end
+  end
+
   context "when enabling and disabling mediation" do
   
     it "should continue to mediate if mediation disabled part way through" do
