@@ -89,13 +89,13 @@ end
 describe "GraphMediator locking scenarios for classes without counter_caches" do
 
   create_schema do |connection|
-    connection.create_table(:foos) do |t|
+    connection.create_table(:foos, :force => true) do |t|
       t.string :name
       t.integer :lock_version, :default => 0
       t.timestamps
     end
 
-    connection.create_table(:bars) do |t|
+    connection.create_table(:bars, :force => true) do |t|
       t.string :name
       t.belongs_to :foo
       t.integer :lock_version, :default => 0

@@ -1,24 +1,16 @@
 require File.expand_path(File.join(File.dirname(__FILE__), 'spec_helper'))
 
-require_reservations
-
-class Reservation
-  include GraphMediator
-  mediate :when_reconciling => :reconcile,
-    :when_cacheing => :cache,
-    :when_bumping => :bump      
-  def reconcile; :reconcile; end
-  def cache; :cache; end
-  def bump; :bump; end
-end
-
 describe "GraphMediator::Mediator" do
   
   before(:each) do
-    @today = Date.today
-    @r = Reservation.new(:starts => @today, :ends => @today + 1, :name => :foo)
-    @r.save_without_mediation!
-    @m = GraphMediator::Mediator.new(@r)
+    load_traceable_callback_tester
+    @t = Traceable.new(:name => :gizmo)
+    @t.save_without_mediation!
+    @m = @t.__send__(:_get_mediator)
+  end
+
+  after(:each) do
+    Object.__send__(:remove_const, :Traceable)
   end
 
   it "should raise error if initialized with something that is not a GraphMediator" do
@@ -41,17 +33,25 @@ describe "GraphMediator::Mediator" do
 
   it "should reflect mediation_enabled of mediated_instance" do
     @m.mediation_enabled?.should be_true
-    @r.disable_mediation!
+    @t.disable_mediation!
     @m.mediation_enabled?.should be_false
   end
 
+  it "should only perform a single after_mediation even with nested mediated_transactions" do
+    @m.mediate { @m.mediate { } }
+    @traceables_callbacks.should == [:before, :reconcile, :cache]
+  end
+
+  # XXX Actually, this seems to be okay
   it "should raise a MediatorException if attempt a transaction before_create because save is called recursively" do
     begin
-      Reservation.before_create { |i| i.mediated_transaction {} }
-      r = Reservation.new(:starts => @today, :ends => @today + 1, :name => :foo)
-      lambda { r.save! }.should raise_error(GraphMediator::MediatorException)
+      Traceable.before_create { |i| i.mediated_transaction { i.callbacks << :before_create } }
+      t = Traceable.new(:name => :foo)
+      # lambda { t.save! }.should raise_error(GraphMediator::MediatorException)
+      t.save!
+      @traceables_callbacks.should == [:before, :before_create, :reconcile, :cache]
     ensure
-      Reservation.before_create_callback_chain.clear
+      Traceable.before_create_callback_chain.clear
     end
   end
 
@@ -59,9 +59,9 @@ describe "GraphMediator::Mediator" do
   
     it "should continue to mediate if mediation disabled part way through" do
       @m.mediation_enabled?.should be_true
-      @r.should_receive(:reconcile).once
+      @t.should_receive(:reconcile).once
       @m.mediate do
-        @r.disable_mediation!
+        @t.disable_mediation!
         @m.mediate do
           # should not begin a new transaction 
         end
@@ -69,11 +69,11 @@ describe "GraphMediator::Mediator" do
     end
 
     it "should continue as disabled if mediation enabled part way through" do
-      @r.disable_mediation!
+      @t.disable_mediation!
       @m.mediation_enabled?.should be_false
-      @r.should_not_receive(:reconcile)
+      @t.should_not_receive(:reconcile)
       @m.mediate do 
-        @r.enable_mediation!
+        @t.enable_mediation!
         @m.mediate do
           # should not begin a new transaction 
         end

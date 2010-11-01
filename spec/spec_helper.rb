@@ -8,6 +8,12 @@ require 'pp'
 require 'database'
 require 'factory'
 
+class TestLogger
+  [:debug, :info, :warn, :error].each do |m|
+    define_method(m) { |message| puts "#{m.to_s.upcase}: #{message}" }
+  end
+end
+
 Spec::Runner.configure do |config|
 
   def require_reservations
@@ -28,6 +34,33 @@ Spec::Runner.configure do |config|
     end
     classes.each do |constant|
       load "#{constant.to_s.underscore}.rb"
+    end
+  end
+
+  # Provides a class Traceable which records calls in @traceables_callbacks
+  def load_traceable_callback_tester
+    create_schema do |conn|
+      conn.create_table(:traceables, :force => true) do |t|
+        t.string :name
+        t.integer :lock_version, :default => 0
+        t.timestamps
+      end
+    end
+
+    # make sure we record all callback calls regardless of which instance we're in.
+    @traceables_callbacks = callbacks_ref = []
+    c = Class.new(ActiveRecord::Base)
+    Object.const_set(:Traceable, c)
+    c.class_eval do
+      include GraphMediator
+       
+      mediate :when_reconciling => :reconcile, :when_cacheing => :cache
+      before_mediation :before
+   
+      def before; callbacks << :before; end
+      def reconcile; callbacks << :reconcile; end
+      def cache; callbacks << :cache; end
+      define_method(:callbacks) { callbacks_ref }
     end
   end
 

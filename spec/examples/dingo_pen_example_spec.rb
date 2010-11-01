@@ -22,7 +22,8 @@ create_schema do |conn|
     t.string :name
     t.string :breed
     t.integer :voracity
-    t.integer :aasm_state
+    t.integer :belly
+    t.string :aasm_state
     t.integer :lock_version, :default => 0
     t.timestamps
   end
@@ -43,19 +44,48 @@ class Dingo < ActiveRecord::Base
   belongs_to :dingo_pen, :counter_cache => true
   include AASM
   aasm_initial_state :hungry
-  aasm_state :hungry
-  aasm_state :satiated
+  aasm_state :hungry, :exit => :eat_biscuits!
+  aasm_state :satiated, :exit => :burn_biscuits!
   aasm_event :eat do
-    transitions :from => :hungry, :to => :satiated
+    transitions :from => :hungry, :to => :satiated, :guard => :full?
   end
   aasm_event :run do
     transitions :from => :satiated, :to => :hungry
+  end
+
+  def eat_biscuits!
+#    puts "#{self}.eat_biscuits"
+    update_attributes(:belly => (belly || 0) + dingo_pen.eat_biscuits(voracity))
+  end
+
+  def burn_biscuits!
+#    puts "#{self}.burn_biscuits"
+    update_attributes(:belly => 0)
+  end
+
+  def full?
+#    puts "#{self}.full? #{belly}, #{voracity}"
+    belly >= voracity
   end
 end
 
 # A bunch of biscuits.
 class Biscuit < ActiveRecord::Base
   belongs_to :dingo_pen
+
+  def consume_weight!(weight_to_consume)
+    amount_to_consume = (weight_to_consume/weight).round
+    amount_consumed = nil
+    if amount >= amount_to_consume
+      self.amount -= amount_to_consume
+      amount_consumed = amount_to_consume
+    else
+      amount_consumed = amount    
+      self.amount = 0
+    end
+    save!
+    return amount_consumed * weight
+  end
 end
 
 class BigBiscuit < Biscuit; end
@@ -77,16 +107,34 @@ class DingoPen < ActiveRecord::Base
     :when_cacheing => :calculate_biscuit_totals
   
   def adjust_biscuit_supply
+#puts "\n* adjusting_biscuit_supply"
     biscuits.each do |b|
-      b.amount = DingoPen.shovel_biscuits((biscuit_minimum + biscuit_maximum)/2) if b.amount < biscuit_minimum 
+      b.update_attributes(:amount => DingoPen.shovel_biscuits((biscuit_minimum + biscuit_maximum)/2)) if b.amount < biscuit_minimum
     end
   end
 
   def feed_dingos
-    dingos.each { |d| d.eat if d.hungry? }
+#puts "** feed_dingos #{dingos.inspect}"
+    dingos.each { |d| d.eat! if d.hungry? }
+  end
+
+  def eat_biscuits(weight_desired)
+#puts "** eat_biscuits #{weight_desired}"
+    total_weight_consumed = 0
+    weight_left_to_consume = weight_desired
+    biscuits.each do |b|
+      weight_consumed_from_bin = b.consume_weight!(weight_left_to_consume)
+#puts "weight_consumed_from_bin #{b.inspect}: #{weight_consumed_from_bin}"
+      total_weight_consumed += weight_consumed_from_bin
+      weight_left_to_consume -= weight_consumed_from_bin
+      break if weight_left_to_consume = 0
+    end 
+#puts "total_weight_consumed: #{total_weight_consumed}"
+    return total_weight_consumed
   end
 
   def calculate_biscuit_totals
+#puts "** calculate_biscuit_totals #{biscuits.inspect}"
     update_attributes(
       :total_biscuits => biscuits.sum('amount'),
       :total_biscuit_weight => biscuits.sum('weight * amount')
@@ -133,21 +181,26 @@ describe "DingoPen" do
     dp.lock_version.should == 1
   end
 
-  # Shouldn't fail on new, because no one else has should have a handle on the instance yet.
-  context "locking scenarios on create" do
+  context "on create" do
 
     it "should succeed" do
-      # because the rows do not exist until the mediation transaction completes
-      # so no one else is in a position to write first
       dp = DingoPen.new(@dingo_pen_attributes)
       dp.dingos << Dingo.new(:name => "Spot", :breed => "Patagonian Leopard Dingo", :voracity => 10)
       dp.dingos << Dingo.new(:name => "Foo", :breed => "Theoretical Testing Dingo", :voracity => 5)
       dp.biscuits << BigBiscuit.new(:amount => 35, :weight => 2.0)
       dp.biscuits << LittleBiscuit.new(:amount => 75, :weight => 0.5)
       dp.save!
+      dp.reload
+      dp.dingos_count.should == 2
+      dp.dingos[0].belly.should == 10
+      dp.dingos[1].belly.should == 6
+      # biscuit amounts adjusted and dingos ate
+      dp.total_biscuits.should == 142
+      dp.total_biscuit_weight.should == 67 * 2 + 75 * 0.5
+      dp.lock_version.should == 1
     end
 
-    it "has the potential for overwriting if mediation off" do
+    it "should succed without mediation" do
       begin
         DingoPen.disable_all_mediation!
         dp = DingoPen.new(@dingo_pen_attributes)
@@ -157,12 +210,10 @@ describe "DingoPen" do
         dp.biscuits << LittleBiscuit.new(:amount => 75, :weight => 0.5)
         dp.save!
         dp.reload
-        dp.calculate_biscuit_totals
-        !dp.lock_version.should == 1
-raise('finish me')
-        pp dp
-        dp.reload
-        pp dp
+        dp.dingos_count.should == 2
+        dp.total_biscuits.should be_nil
+        dp.total_biscuit_weight.should be_nil
+        dp.lock_version.should == 0
       ensure
         DingoPen.enable_all_mediation!
       end
@@ -170,11 +221,44 @@ raise('finish me')
 
   end
 
-  context "locking scenarios on update" do
-    it "should test update"
+  context "on update" do
+    it "should update_calculations after every child" do
+      dp = DingoPen.create!(@dingo_pen_attributes)
+      dp.dingos << Dingo.new(:name => "Spot", :breed => "Patagonian Leopard Dingo", :voracity => 10)
+      dp.dingos << Dingo.new(:name => "Foo", :breed => "Theoretical Testing Dingo", :voracity => 5)
+      dp.biscuits << BigBiscuit.new(:amount => 35, :weight => 2.0)
+      dp.biscuits << LittleBiscuit.new(:amount => 75, :weight => 0.5)
+      dp.reload
+      dp.dingos_count.should == 2
+      dp.dingos[0].belly.should == 10
+      dp.dingos[1].belly.should == 6
+      # biscuit amounts adjusted and dingos ate
+      dp.total_biscuits.should == 142
+      dp.total_biscuit_weight.should == 67 * 2 + 75 * 0.5
+      dp.lock_version.should == 5
+    end
+
+    it "should have updated calculations only once within a mediated transaction" do
+      dp = DingoPen.create!(@dingo_pen_attributes)
+      dp.mediated_transaction do
+        dp.dingos << Dingo.new(:name => "Spot", :breed => "Patagonian Leopard Dingo", :voracity => 10)
+        dp.dingos << Dingo.new(:name => "Foo", :breed => "Theoretical Testing Dingo", :voracity => 5)
+        dp.biscuits << BigBiscuit.new(:amount => 35, :weight => 2.0)
+        dp.biscuits << LittleBiscuit.new(:amount => 75, :weight => 0.5)
+        dp.save!
+      end
+      dp.reload
+      dp.dingos_count.should == 2
+      dp.dingos[0].belly.should == 10
+      dp.dingos[1].belly.should == 6
+      # biscuit amounts adjusted, and dingos ate
+      dp.total_biscuits.should == 142
+      dp.total_biscuit_weight.should == 67 * 2 + 75 * 0.5
+      dp.lock_version.should == 2
+    end
   end
 
-  context "locking scenarios on delete" do
+  context "on delete" do
     it "should test delete"
   end
 end

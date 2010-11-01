@@ -1,4 +1,4 @@
-require File.expand_path(File.join(File.dirname(__FILE__), 'spec_helper'))
+require File.expand_path(File.join(File.dirname(__FILE__), '..', 'spec_helper'))
 
 create_schema do |conn|
   conn.create_table(:people, :force => true) do |t|
@@ -57,7 +57,7 @@ class Lecturer < Person; end
 class Student < Person; end
 class GraduateStudent < Student; end
 
-class Room; < ActiveRecord::Base; end
+class Room < ActiveRecord::Base; end
 
 class Course < ActiveRecord::Base
 
@@ -68,7 +68,7 @@ class Course < ActiveRecord::Base
   has_many :sessions, :through => :assistants
   has_many :students
 
-  mediate :reconciliation => :adjust_bars, :bumping => :meeting_version
+#  mediate :reconciliation => :adjust_bars, :bumping => :meeting_version
 
 end
 
@@ -87,5 +87,5 @@ end
 class Session < ActiveRecord::Base
   belongs_to :assistant
   belongs_to :room
-  has_many :schedule, :foreign_key => 
+#  has_many :schedule, :foreign_key => 
 end

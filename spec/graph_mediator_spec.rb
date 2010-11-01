@@ -13,12 +13,6 @@ create_schema do |conn|
     t.timestamps
   end
   
-  conn.create_table(:things, :force => true) do |t|
-    t.string :name
-    t.integer :lock_version, :default => 0
-    t.timestamps
-  end
-
   conn.create_table(:untimestamped_things, :force => true) do |t|
     t.string :name
     t.integer :lock_version, :default => 0
@@ -140,76 +134,58 @@ describe "GraphMediator" do
 
   context "with a defined mediation" do 
 
-    def load_thing
-      # make sure we record all callback calls regardless of which instance we're in.
-      @things_callbacks = callbacks_ref = []
-      c = Class.new(ActiveRecord::Base)
-      Object.const_set(:Thing, c)
-      c.class_eval do
-        include GraphMediator
-         
-        mediate :when_reconciling => :reconcile, :when_cacheing => :cache
-        before_mediation :before
-     
-        def before; callbacks << :before; end
-        def reconcile; callbacks << :reconcile; end
-        def cache; callbacks << :cache; end
-        define_method(:callbacks) { callbacks_ref }
-      end
-    end
-
     before(:each) do
-      load_thing
-      @t = Thing.new(:name => :gizmo)
+      load_traceable_callback_tester
+      @t = Traceable.new(:name => :gizmo)
     end
 
     after(:each) do
-      Object.__send__(:remove_const, :Thing)
+      Object.__send__(:remove_const, :Traceable)
     end
 
     it "should be able to disable and enable mediation for the whole class" do
-      Thing.disable_all_mediation!
+      Traceable.disable_all_mediation!
       @t.save
       @t.save!
-      @things_callbacks.should == []
-      Thing.enable_all_mediation!
+      @traceables_callbacks.should == []
+      Traceable.enable_all_mediation!
       @t.save
       @t.save!
-      @things_callbacks.should == [:before, :reconcile, :cache, :before, :reconcile, :cache,]
+      @traceables_callbacks.should == [:before, :reconcile, :cache, :before, :reconcile, :cache,]
     end
 
     it "should disable and enable mediation for an instance" do
       @t.disable_mediation!
       @t.save
       @t.save!
-      @things_callbacks.should == []
+      @traceables_callbacks.should == []
       @t.enable_mediation!
       @t.save
       @t.save!
-      @things_callbacks.should == [:before, :reconcile, :cache, :before, :reconcile, :cache,]
+      @traceables_callbacks.should == [:before, :reconcile, :cache, :before, :reconcile, :cache,]
     end
 
     it "should have save_without_mediation convenience methods" do
       @t.save_without_mediation
       @t.save_without_mediation!
-      @things_callbacks.should == []
+      @traceables_callbacks.should == []
     end
 
     it "should handle saving a new record" do
-      n = Thing.new(:name => 'new')
+      n = Traceable.new(:name => 'new')
       n.save!
-      @things_callbacks.should == [:before, :reconcile, :cache,]
+      @traceables_callbacks.should == [:before, :reconcile, :cache,]
     end
 
     it "should handle updating an existing record" do
-      e = Thing.create!(:name => 'exists')
-      @things_callbacks.clear
+      e = Traceable.create!(:name => 'exists')
+      @traceables_callbacks.clear
       e.save!
-      @things_callbacks.should == [:before, :reconcile, :cache,]
+      @traceables_callbacks.should == [:before, :reconcile, :cache,]
     end
 
     it "should nest mediated transactions" do
-      Thing.class_eval do
+      Traceable.class_eval do
         after_create do |instance|
           instance.mediated_transaction do
             instance.callbacks << :nested_create!
@@ -221,51 +197,53 @@ describe "GraphMediator" do
           end
         end
       end
-      nested = Thing.create!(:name => :nested!)
-      @things_callbacks.should == [:before, :nested_create!, :nested_save!, :reconcile, :cache, :nested_save!]
+      nested = Traceable.create!(:name => :nested!)
+      @traceables_callbacks.should == [:before, :nested_create!, :nested_save!, :reconcile, :cache, :nested_save!]
       # The final nested save is the touch and lock_version bump
     end
 
     # can't nest before_create.  The second mediated_transaction will occur
     # before instance has an id, so we have no way to look up a mediator.
+    # XXX actually, it appears you can?
     it "cannot nest mediated transactions before_create if versioning" do
-      Thing.class_eval do
+      Traceable.class_eval do
         before_create do |instance|
           instance.mediated_transaction do
             instance.callbacks << :nested_before_create!
           end
         end
       end
-      lambda { nested = Thing.create!(:name => :nested!) }.should raise_error(GraphMediator::MediatorException)
-      #@things_callbacks.should == [:before, :before, :nested_before_create!, :reconcile, :cache, :reconcile, :cache,]
+      #lambda { nested = Traceable.create!(:name => :nested!) }.should raise_error(GraphMediator::MediatorException)
+      nested = Traceable.create!(:name => :nested!)
+      @traceables_callbacks.should == [:before, :nested_before_create!, :reconcile, :cache]
     end
 
     it "should override save" do
       @t.save
-      @things_callbacks.should == [:before, :reconcile, :cache,] 
+      @traceables_callbacks.should == [:before, :reconcile, :cache,] 
       @t.new_record?.should be_false
     end
 
     it "should override save bang" do
       @t.save!
-      @things_callbacks.should == [:before, :reconcile, :cache,] 
+      @traceables_callbacks.should == [:before, :reconcile, :cache,] 
       @t.new_record?.should be_false
     end
 
     it "should allow me to override save locally" do
-      Thing.class_eval do
+      Traceable.class_eval do
         def save
           callbacks << '...saving...'
           super
         end
       end
       @t.save
-      @things_callbacks.should == ['...saving...', :before, :reconcile, :cache,] 
+      @traceables_callbacks.should == ['...saving...', :before, :reconcile, :cache,] 
       @t.new_record?.should be_false
     end
 
     it "should allow me to decorate save_with_mediation" do
-      Thing.class_eval do
+      Traceable.class_eval do
         alias_method :save_without_transactions_with_mediation_without_logging, :save_without_transactions_with_mediation
         def save_without_transactions_with_mediation(*args)
           callbacks << '...saving...'
@@ -273,12 +251,12 @@ describe "GraphMediator" do
         end
       end
       @t.save
-      @things_callbacks.should == ['...saving...', :before, :reconcile, :cache,] 
+      @traceables_callbacks.should == ['...saving...', :before, :reconcile, :cache,] 
       @t.new_record?.should be_false
     end
 
     it "should allow me to decorate save_without_mediation" do
-      Thing.class_eval do
+      Traceable.class_eval do
         alias_method :save_without_transactions_without_mediation_without_logging, :save_without_transactions_without_mediation
         def save_without_transactions_without_mediation(*args)
           callbacks << '...saving...'
@@ -286,7 +264,7 @@ describe "GraphMediator" do
         end
       end
       @t.save
-      @things_callbacks.should == [:before, '...saving...', :reconcile, :cache,] 
+      @traceables_callbacks.should == [:before, '...saving...', :reconcile, :cache,] 
       @t.new_record?.should be_false
     end
 
@@ -314,6 +292,23 @@ describe "GraphMediator" do
       @f.lock_version.should == 2
     end
 
+    context "with mediation disabled" do
+      before(:each) do
+        Foo.disable_all_mediation!
+      end
+
+      after(:each) do
+        Foo.enable_all_mediation!
+      end
+
+      it "should update lock_version normally if mediation is off" do
+        @f.save!
+        @f.lock_version.should == 0
+        @f.update_attributes(:foo => 'foo')
+        @f.lock_version.should == 1
+      end
+    end
+
     it "should get a mediator" do
       begin 
         mediator = @f.__send__(:_get_mediator)
@@ -324,12 +319,12 @@ describe "GraphMediator" do
       end
     end
 
-    it "should always get a new mediator for a new record" do
+    it "should get the same mediator for a new record if called from the same instance" do
       begin
         @f.new_record?.should be_true
         mediator1 = @f.__send__(:_get_mediator)
         mediator2 = @f.__send__(:_get_mediator)
-        mediator1.should_not equal(mediator2)
+        mediator1.should equal(mediator2)
       ensure
         @f.__send__(:mediators_for_new_records).clear
       end
@@ -356,9 +351,11 @@ describe "GraphMediator" do
       begin
         @f.new_record?.should be_true
         mediator1 = @f.__send__(:_get_mediator)
-        @f.save_without_mediation
-        mediator2 = @f.__send__(:_get_mediator)
-        mediator1.should equal(mediator2)
+        @f.mediated_transaction do
+          @f.save
+          mediator2 = @f.__send__(:_get_mediator)
+          mediator1.should equal(mediator2)
+        end
       ensure
         @f.__send__(:mediators_for_new_records).clear
         @f.__send__(:mediators).clear

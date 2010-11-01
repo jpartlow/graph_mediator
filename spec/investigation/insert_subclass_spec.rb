@@ -1,6 +1,6 @@
 require File.expand_path(File.join(File.dirname(__FILE__), '..', 'spec_helper'))
 
-require 'self_decorating'
+require 'investigation/self_decorating'
 
 module Other
 

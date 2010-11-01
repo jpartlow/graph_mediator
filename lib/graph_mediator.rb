@@ -1,8 +1,11 @@
-require 'active_support/core_ext/class/inheritable_attributes'
-require 'active_support/core_ext/module/attribute_accessors'
-require 'active_support/core_ext/array/extract_options'
-require 'active_support/callbacks'
+require 'active_support'
+#require 'active_support/core_ext/class/inheritable_attributes'
+#require 'active_support/core_ext/module/attribute_accessors'
+#require 'active_support/core_ext/array/extract_options'
+#require 'active_support/buffered_logger'
+#require 'active_support/callbacks'
 require 'graph_mediator/mediator'
+require 'graph_mediator/locking'
 
 # = GraphMediator =
 #
@@ -56,6 +59,16 @@ module GraphMediator
   mattr_accessor :enable_mediation
   self.enable_mediation = true
 
+  # Global logger override for GraphMediator.  By default each class including GraphMediator
+  # uses the class's ActiveRecord logger.  Setting GraphMediator.logger overrides this.
+  mattr_accessor :logger
+  
+  # Log level may be adjusted just for GraphMediator globally, or for each class including
+  # GraphMediator.  This should be an ActiveSupport::BufferedLogger log level constant
+  # such as ActiveSupport::BufferedLogger::DEBUG
+  mattr_accessor :log_level
+  self.log_level = ActiveSupport::BufferedLogger::INFO
+
   CALLBACKS = [:before_mediation, :mediate_reconciles, :mediate_caches, :mediate_bumps]
   SAVE_METHODS = [:save_without_transactions, :save_without_transactions!]
  
@@ -90,11 +103,17 @@ module GraphMediator
       proxy = Module.new do
         include ActiveSupport::Callbacks
         include Proxy
+        include Locking
+        mattr_accessor :_graph_mediator_logger
+        mattr_accessor :_graph_mediator_log_level
       end
       base.const_set(:MediatorProxy, proxy)
+      proxy._graph_mediator_logger = GraphMediator.logger || base.logger
+      proxy._graph_mediator_log_level = GraphMediator.log_level
 
       base.send(:include, proxy)
       base.send(:extend, Proxy::ClassMethods)
+      base.send(:extend, Locking::ClassMethods)
 
       key = base.to_s.underscore.gsub('/','_').upcase
       hash_key = "GRAPH_MEDIATOR_#{key}_HASH_KEY"
@@ -153,23 +172,6 @@ module GraphMediator
         end
       end
 
-      # Overrides ActiveRecord::Base.update_counters to skip locking if currently mediating
-      # the passed id.
-      def update_counters(ids, counters)
-        # id may be an array of ids...
-        unless currently_mediating?(ids)
-          # if none are being mediated can proceed as normal
-          super
-        else
-          # we have to go one by one unfortunately
-          Array(ids).each do |id|
-            currently_mediating?(id) ?
-              update_counters_without_lock(id, counters) :
-              super
-          end
-        end
-      end
-
       # Unique key to access a thread local hash of mediators for specific
       # #{base}::MediatorProxy type.
       #
@@ -207,8 +209,11 @@ module GraphMediator
 
     # Wraps the given block in a transaction and begins mediation. 
     def mediated_transaction(&block)
+      m_debug("#{self}.mediated_transaction called")
       mediator = _get_mediator
-      mediator.mediate(&block)
+      result = mediator.mediate(&block)
+      m_debug("#{self}.mediated_transaction completed successfully")
+      return result
     ensure
       if mediator && mediator.idle?
         mediators.delete(self.id)
@@ -250,28 +255,19 @@ module GraphMediator
         !@graph_mediator_mediation_disabled
     end
 
-    # Overrides ActiveRecord::Locking::Optimistic#locking_enabled?
-    #
-    # * True if we are not in a mediated_transaction and lock_enabled? is true
-    # per ActiveRecord (lock_column exists and lock_optimistically? true)
-    # * True if we are in a mediated_transaction and lock_enabled? is true per
-    # ActiveRecord and we are in the midst the version bumping phase of the transaction.
-    # 
-    # Effectively this ensures that an optimistic lock check and version bump
-    # occurs as usual outside of mediation but only at the end of the
-    # transaction within mediation.
-    def locking_enabled?
-      locking_enabled = super
-      locking_enabled &&= current_mediation_phase == :versioning if currently_mediating?
-      locking_enabled
-    end
-
     %w(destroy save save! toggle toggle! update_attribute update_attributes update_attributes!).each do |method|
       base, punctuation = parse_method_punctuation(method)
       define_method("#{base}_without_mediation#{punctuation}") do |*args,&block|
         disable_mediation!
         send(method) 
         enable_mediation!
+      end
+    end
+
+    [:debug, :info, :warn, :error, :fatal].each do |level|
+      const = ActiveSupport::BufferedLogger.const_get(level.to_s.upcase)
+      define_method("m_#{level}") do |message|
+        _graph_mediator_logger.send(level, message) if _graph_mediator_log_level <= const
       end
     end
 
@@ -288,21 +284,27 @@ module GraphMediator
     # Accessor for the mediator associated with this instance's id, or nil if we are
     # not currently mediating.
     def current_mediator
-      mediator = mediators[self.id] 
+      m_debug("#{self}.current_mediator called")
+      mediator = mediators[self.id]
       mediator ||= mediators_for_new_records.find { |m| m.mediated_instance.equal?(self) || m.mediated_id == self.id }
+      m_debug("#{self}.current_mediator found #{mediator || 'nothing'}")
+      return mediator
     end 
 
     private
 
     # Gets the current mediator or initializes a new one.
     def _get_mediator
-      mediator = current_mediator
-      mediator ||= GraphMediator::Mediator.new(self)
-      if new_record?
-        mediators_for_new_records << (mediator = GraphMediator::Mediator.new(self))
-      else
-        mediators[self.id] = mediator
+      m_debug("#{self}._get_mediator called")
+      m_debug("#{self}.get_mediator in a new record") if new_record?
+      unless mediator = current_mediator
+        mediator = GraphMediator::Mediator.new(self)
+        m_debug("#{self}.get_mediator created new mediator")
+        new_record? ?
+          mediators_for_new_records << mediator :
+          mediators[self.id] = mediator
       end
+      m_debug("#{self}._get_mediator obtained #{mediator}")
       return mediator
     end
 
