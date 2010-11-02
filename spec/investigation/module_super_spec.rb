@@ -1,5 +1,7 @@
 require File.expand_path(File.join(File.dirname(__FILE__), '..', 'spec_helper'))
 
+module ModuleSuperSpec # namespacing
+
 describe "module super" do
 
   before(:each) do
@@ -31,10 +33,10 @@ describe "module super" do
   end
 
   after(:each) do
-    Object.__send__(:remove_const, :Baz)
-    Object.__send__(:remove_const, :Bar)
-    Object.__send__(:remove_const, :Foo)
-    Object.__send__(:remove_const, :AbstractFoo)
+    ModuleSuperSpec.__send__(:remove_const, :Baz)
+    ModuleSuperSpec.__send__(:remove_const, :Bar)
+    ModuleSuperSpec.__send__(:remove_const, :Foo)
+    ModuleSuperSpec.__send__(:remove_const, :AbstractFoo)
   end
 
   it "should basically work" do
@@ -80,5 +82,7 @@ describe "module super" do
     f = Foo.new
     f.baz.should == "baz barred from module"
   end
+
+end
 
 end

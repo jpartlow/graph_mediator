@@ -2,46 +2,52 @@ require File.expand_path(File.join(File.dirname(__FILE__), '..', 'spec_helper'))
 
 require 'investigation/self_decorating'
 
-module Other
-
-  def dingo
-    super
-  end
-  # super fails in dingo_without_other (see above)
-  alias_method :dingo_without_other, :dingo
-
-  def dingo
-    super + " other"
-  end
-
-  def bat
-    'bat'
-  end
-end
-
-class SuperClass 
-  def dingo
-    'dingo'
-  end
-end
-
-def reload_bar
-  Object.send(:remove_const, :Bar) if Object.const_defined?(:Bar)
-  instance_eval <<EOS
-module ::Bar
-  def bar
-    'modular bar'
-  end
-end
-EOS
-end
-
-class SubClass < SuperClass; end
+module DecoratingSubclassSpec # namespacing
 
 describe "Decorating by extending object eigenclass" do
 
+  module Other
+  
+    def dingo
+      super
+    end
+    # super fails in dingo_without_other (see above)
+    alias_method :dingo_without_other, :dingo
+  
+    def dingo
+      super + " other"
+    end
+  
+    def bat
+      'bat'
+    end
+  end
+  
+  class SuperClass 
+    def dingo
+      'dingo'
+    end
+  end
+  
+  def reload_bar
+    Object.send(:remove_const, :Bar) if Object.const_defined?(:Bar)
+    instance_eval <<EOS
+  module ::Bar
+    def bar
+      'modular bar'
+    end
+  end
+EOS
+  end
+  
+  class SubClass < SuperClass; end
+
   before(:each) do
     reload_bar
+  end
+
+  after(:all) do
+    Object.__send__(:remove_const, :Bar)
   end
 
   it "should extend Foo::Secret" do
@@ -51,8 +57,12 @@ describe "Decorating by extending object eigenclass" do
 
   context "with a new SelfDecorating" do
 
+    before(:each) do
+      load('investigation/self_decorating.rb')
+    end
+
     after(:each) do
-      reload_class( SelfDecorating)
+      Object.send(:remove_const, :SelfDecorating)
     end
 
     it "should be able to decorate methods in base after they are defined" do
@@ -107,4 +117,6 @@ describe "Decorating by extending object eigenclass" do
     lambda { s.dingo_without_other }.should raise_error(NoMethodError)
     s.bat.should == 'bat'
   end
+end
+
 end

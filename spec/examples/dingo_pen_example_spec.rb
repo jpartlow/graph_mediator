@@ -127,7 +127,7 @@ class DingoPen < ActiveRecord::Base
 #puts "weight_consumed_from_bin #{b.inspect}: #{weight_consumed_from_bin}"
       total_weight_consumed += weight_consumed_from_bin
       weight_left_to_consume -= weight_consumed_from_bin
-      break if weight_left_to_consume = 0
+      break if weight_left_to_consume <= 0
     end 
 #puts "total_weight_consumed: #{total_weight_consumed}"
     return total_weight_consumed

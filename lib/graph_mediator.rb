@@ -477,7 +477,7 @@ module GraphMediator
         dependent_class.send(:extend, AliasExtension) unless dependent_class.include?(AliasExtension)
         methods = SAVE_METHODS.clone
         methods << :destroy
-        methods << { :through => self.class_of_active_record_descendant(self).to_s.underscore }
+        methods << { :through => self.class_of_active_record_descendant(self).to_s.demodulize.underscore }
         dependent_class.send(:_register_for_mediation, *methods)
       end
       mediate_reconciles(options[:when_reconciling]) if options[:when_reconciling]

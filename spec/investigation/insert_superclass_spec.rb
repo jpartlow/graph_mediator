@@ -1,72 +1,79 @@
 require File.expand_path(File.join(File.dirname(__FILE__), '..', 'spec_helper'))
 
-module Decorator
-  def decorate(*methods)
-    methods.each do |m|
-      alias_method "#{m}_without_decoration", m
-      define_method(m) do |*args,&block|
-        super + " decorated" 
-      end
-    end
-  end 
-end
-
-def reload_foo
-  [:Bar, :Foo, :SubFoo].each { |c| Object.send(:remove_const, c) if Object.const_defined?(c) }
-  instance_eval <<EOS
-module ::Bar
-  def second; 'bar second'; end
-end
-
-module Baz
-  def super_method
-    'super'
-  end
-end
-
-class ::Foo
-  extend Decorator
-  include Bar
-  include Baz
-  module DecorateMe
-    def first; 'first'; end
-    def second; super + ' overridden'; end
-    def third; 'third'; end
-  end
-  include DecorateMe
-
-  def local
-    'local'
-  end
-
-  decorate :first, :second, :third, :super_method, :local
-
-  def third
-    'broken'
-  end
-end
-
-class ::SubFoo < Foo
-  def first
-    'sub ' + super
-  end
-  def first_without_decoration
-    'sub ' + super
-  end
-  def second
-    'sub ' + super
-  end
-  def second_without_decoration
-    'sub ' + super
-  end
-end
-EOS
-end
+module InsertingSuperClassSpec # namespacing
 
 describe "insert superclass" do
 
+  module Decorator
+    def decorate(*methods)
+      methods.each do |m|
+        alias_method "#{m}_without_decoration", m
+        define_method(m) do |*args,&block|
+          super + " decorated" 
+        end
+      end
+    end 
+  end
+  
+  def reload_foo
+    [:Bar, :Foo, :SubFoo].each { |c| Object.send(:remove_const, c) if Object.const_defined?(c) }
+    instance_eval <<EOS
+  module ::Bar
+    def second; 'bar second'; end
+  end
+  
+  module Baz
+    def super_method
+      'super'
+    end
+  end
+  
+  class ::Foo
+    extend Decorator
+    include Bar
+    include Baz
+    module DecorateMe
+      def first; 'first'; end
+      def second; super + ' overridden'; end
+      def third; 'third'; end
+    end
+    include DecorateMe
+  
+    def local
+      'local'
+    end
+  
+    decorate :first, :second, :third, :super_method, :local
+  
+    def third
+      'broken'
+    end
+  end
+  
+  class ::SubFoo < Foo
+    def first
+      'sub ' + super
+    end
+    def first_without_decoration
+      'sub ' + super
+    end
+    def second
+      'sub ' + super
+    end
+    def second_without_decoration
+      'sub ' + super
+    end
+  end
+EOS
+  end
+
   before(:each) do
     reload_foo
+  end
+
+  after(:all) do
+    Object.__send__(:remove_const, :Bar)
+    Object.__send__(:remove_const, :Foo)
   end
 
   it "should decorate the declared methods" do
@@ -118,5 +125,7 @@ describe "insert superclass" do
     f.first_without_decoration.should == 'sub first'
     f.second_without_decoration.should == 'sub bar second overridden'
   end
+
+end
 
 end
