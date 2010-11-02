@@ -6,7 +6,7 @@ begin
   Jeweler::Tasks.new do |gem|
     gem.name = "graph_mediator"
     gem.summary = %Q{Mediates state changes between a set of interdependent ActiveRecord objects.}
-    gem.description = %Q{TODO: longer description of your gem}
+    gem.description = %Q{Mediates state changes between a set of interdependent ActiveRecord objects.}
     gem.email = "jpartlow@glatisant.org"
     gem.homepage = "http://github.com/jpartlow/graph_mediator"
     gem.authors = ["Josh Partlow"]
