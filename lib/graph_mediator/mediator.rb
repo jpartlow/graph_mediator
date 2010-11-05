@@ -65,6 +65,19 @@ module GraphMediator
       end
     end
 
+    # Reload them mediated instance.
+    # Throws an ActiveRecord::StaleObjectError if lock_column has been updated outside of transaction.
+    def refresh_mediated_instance
+      unless mediated_instance.new_record?
+        if mediated_instance.locking_enabled_without_mediation?
+          locking_column = mediated_instance.class.locking_column
+          current_lock_version = mediated_instance.send(locking_column) if locking_column
+        end
+        mediated_instance.reload 
+        raise(ActiveRecord::StaleObjectError) if current_lock_version && current_lock_version != mediated_instance.send(locking_column)
+      end
+    end
+
     private
 
     def begin_transaction(&block)
@@ -92,6 +105,7 @@ module GraphMediator
       debug("_wrap_in_callbacks yielding completed")
       debug("_wrap_in_callbacks mediate_reconciles")
       mediated_instance.run_callbacks(:mediate_reconciles)
+      refresh_mediated_instance # after having reconciled
       debug("_wrap_in_callbacks mediate_reconciles completed")
       debug("_wrap_in_callbacks mediate_caches")
       mediated_instance.run_callbacks(:mediate_caches)

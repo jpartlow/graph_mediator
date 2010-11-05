@@ -84,7 +84,6 @@ module GraphMediator
       proxy = Module.new do
         include ActiveSupport::Callbacks
         include Proxy
-        include Locking
         mattr_accessor :_graph_mediator_logger
         mattr_accessor :_graph_mediator_log_level
       end
@@ -94,7 +93,7 @@ module GraphMediator
 
       base.send(:include, proxy)
       base.send(:extend, Proxy::ClassMethods)
-      base.send(:extend, Locking::ClassMethods)
+      base.send(:include, Locking)
 
       key = base.to_s.underscore.gsub('/','_').upcase
       hash_key = "GRAPH_MEDIATOR_#{key}_HASH_KEY"
