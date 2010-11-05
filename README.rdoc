@@ -92,6 +92,18 @@ there will be no versioning.
 +A lock_column by itself *without* a timestamp will not increment and will not provide
 any optimistic locking in a class including GraphMediator!+
 
+Using a lock_column along with a counter_cache in a dependent child will raise a StaleObject
+error during a mediated_transaction if you touch the dependent.
+
+The cache_counters do not play well with optimistic locking because they are updated with
+a direct SQL call to the database, so ActiveRecord instance remain unaware of the lock_version
+change and assume it came from another transaction.
+
+You should not need to declare lock_version for any children that are declared as a dependency
+of the root node, since updates will also update the root nodes lock_version.  So if another
+transaction updates a child, root.lock_version should increment, and the first transaction
+should raise a StaleObject error when it too tries to update the child.
+
 If you override super in the model hierarchy you are mediating, you must pass your 
 override as a block to super or it will occur outside of mediation:
 

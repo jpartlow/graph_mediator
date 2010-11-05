@@ -89,9 +89,9 @@ describe "GraphMediator locking scenarios" do
       context "with lock_version for dependent children" do
 
         before(:all) do
-#          create_schema do |conn|
-#            conn.add_column(:parties, :lock_version, :integer)
-#          end  
+          create_schema do |conn|
+            conn.add_column(:parties, :lock_version, :integer)
+          end  
           Party.reset_column_information
         end
 
