@@ -6,7 +6,6 @@ require 'spec/autorun'
 require 'pp'
 
 require 'database'
-require 'factory'
 
 class TestLogger
   [:debug, :info, :warn, :error].each do |m|

@@ -259,6 +259,30 @@ describe "DingoPen" do
   end
 
   context "on delete" do
-    it "should test delete"
+    before(:each) do
+      @dp = DingoPen.new(@dingo_pen_attributes)
+      @dp.dingos << @spot = Dingo.new(:name => "Spot", :breed => "Patagonian Leopard Dingo", :voracity => 10)
+      @dp.dingos << Dingo.new(:name => "Foo", :breed => "Theoretical Testing Dingo", :voracity => 5)
+      @dp.biscuits << @big = BigBiscuit.new(:amount => 35, :weight => 2.0)
+      @dp.biscuits << LittleBiscuit.new(:amount => 75, :weight => 0.5)
+      @dp.save!
+      @spot.reload
+      @big.reload
+    end
+
+    it "should increment graph version after deletion of a child" do
+      lambda {
+        @spot.destroy
+        @dp.reload
+      }.should change(@dp, :lock_version).by(1)
+    end
+
+    it "should update_calculations after deletion of a child" do
+      @big.destroy
+      @dp.reload
+      @dp.total_biscuits.should == 75 
+      @dp.total_biscuit_weight.should == 75 * 0.5
+    end
+
   end
 end

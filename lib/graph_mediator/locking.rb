@@ -27,7 +27,7 @@ module GraphMediator
     # * True if we are not in a mediated_transaction and lock_enabled? is true
     # per ActiveRecord (lock_column exists and lock_optimistically? true)
     # * True if we are in a mediated_transaction and lock_enabled? is true per
-    # ActiveRecord and we are in the midst the version bumping phase of the transaction.
+    # ActiveRecord and we are in the midst of the version bumping phase of the transaction.
     # 
     # Effectively this ensures that an optimistic lock check and version bump
     # occurs as usual outside of mediation but only at the end of the

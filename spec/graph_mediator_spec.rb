@@ -51,9 +51,9 @@ describe "GraphMediator" do
   end
 
   it "should provide a module attribute accessor for turning mediation on or off" do
-    GraphMediator.enable_mediation.should == true
-    GraphMediator.enable_mediation = false
-    GraphMediator.enable_mediation.should == false
+    GraphMediator::Configuration.enable_mediation.should == true
+    GraphMediator::Configuration.enable_mediation = false
+    GraphMediator::Configuration.enable_mediation.should == false
   end
 
   it "should be able to disable and enable mediation globally"
@@ -73,6 +73,69 @@ describe "GraphMediator" do
 
   it "should provide the mediate_caches class macro" do
     Foo.should respond_to(:mediate_caches)
+  end
+
+  context "testing logger" do
+    class LoggerTest < ActiveRecord::Base
+      include GraphMediator
+      def log_me
+        logger.debug('hi')
+      end
+      def log_me_graph_mediator
+        m_info('gm')
+      end
+    end
+    
+    before(:all) do
+      create_schema do |conn|
+        conn.create_table(:logger_tests, :force => true) do |t|
+          t.string :name
+        end
+      end
+    end
+
+    before(:each) do
+      @lt = LoggerTest.create!
+    end
+
+    it "should have the base logger" do
+      LoggerTest.logger.should_not be_nil
+      LoggerTest.logger.should == ActiveRecord::Base.logger
+    end
+
+    it "should have a MediatorProxy logger" do
+      LoggerTest::MediatorProxy._graph_mediator_logger.should_not be_nil
+      LoggerTest::MediatorProxy._graph_mediator_logger.should == LoggerTest.logger
+    end
+
+    it "should have the base logger for instances" do
+      @lt.logger.should_not be_nil
+      @lt.logger.should == ActiveRecord::Base.logger
+    end
+
+    it "should have the mediator logger for instances" do
+      @lt.logger.should_not be_nil
+      @lt.logger.should == ActiveRecord::Base.logger
+    end
+
+    it "should be possible to override base logger" do
+      begin
+        mock_logger = mock("logger")
+        mock_logger.should_receive(:debug).once.with('hi')
+        current_logger = ActiveRecord::Base.logger
+        LoggerTest.logger = mock_logger
+        @lt.log_me
+      ensure
+        LoggerTest.logger = current_logger
+      end
+    end
+    
+    it "should be possible to override graph logger" do
+      mock_logger = mock("logger")
+      mock_logger.should_receive(:info).once.with('gm')
+      LoggerTest::MediatorProxy._graph_mediator_logger = mock_logger
+      @lt.log_me_graph_mediator
+    end
   end
 
   context "with a fresh class" do

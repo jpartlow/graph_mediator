@@ -3,15 +3,15 @@ require File.expand_path(File.join(File.dirname(__FILE__), '..', 'spec_helper'))
 describe "Nesting of mediated_transactions" do
 
   before(:all) do
-    #@old_logger = GraphMediator.logger
-    #GraphMediator.logger = TestLogger.new
-    @old_log_level = GraphMediator.log_level
-    GraphMediator.log_level = ActiveSupport::BufferedLogger::DEBUG
+    #@old_logger = GraphMediator::Configuration.logger
+    #GraphMediator::Configuration.logger = TestLogger.new
+    @old_log_level = GraphMediator::Configuration.log_level
+    GraphMediator::Configuration.log_level = ActiveSupport::BufferedLogger::DEBUG
   end
 
   after(:all) do
-    #GraphMediator.logger = @old_logger
-    GraphMediator.log_level = @old_log_level
+    #GraphMediator::Configuration.logger = @old_logger
+    GraphMediator::Configuration.log_level = @old_log_level
   end
 
   before(:each) do
@@ -39,7 +39,7 @@ describe "Nesting of mediated_transactions" do
     @traceables_callbacks.should == [:before, :reconcile, :cache]
   end
 
-  it "may call after_mediation twice if mediated_transaction is called on a new instance" do
+  it "should call after_mediation only once even if mediated_transaction is called on a new instance" do
     Traceable.logger.debug "\n\n\nnew test"
     new_t = Traceable.new(:name => 'new')
     new_t.mediated_transaction { new_t.save }

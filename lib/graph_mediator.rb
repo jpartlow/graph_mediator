@@ -1,9 +1,4 @@
 require 'active_support'
-#require 'active_support/core_ext/class/inheritable_attributes'
-#require 'active_support/core_ext/module/attribute_accessors'
-#require 'active_support/core_ext/array/extract_options'
-#require 'active_support/buffered_logger'
-#require 'active_support/callbacks'
 require 'graph_mediator/mediator'
 require 'graph_mediator/locking'
 
@@ -55,20 +50,6 @@ require 'graph_mediator/locking'
 # 
 module GraphMediator
   
-  # Enable or disable mediation globally.  Default: true
-  mattr_accessor :enable_mediation
-  self.enable_mediation = true
-
-  # Global logger override for GraphMediator.  By default each class including GraphMediator
-  # uses the class's ActiveRecord logger.  Setting GraphMediator.logger overrides this.
-  mattr_accessor :logger
-  
-  # Log level may be adjusted just for GraphMediator globally, or for each class including
-  # GraphMediator.  This should be an ActiveSupport::BufferedLogger log level constant
-  # such as ActiveSupport::BufferedLogger::DEBUG
-  mattr_accessor :log_level
-  self.log_level = ActiveSupport::BufferedLogger::INFO
-
   CALLBACKS = [:before_mediation, :mediate_reconciles, :mediate_caches, :mediate_bumps]
   SAVE_METHODS = [:save_without_transactions, :save_without_transactions!]
  
@@ -108,8 +89,8 @@ module GraphMediator
         mattr_accessor :_graph_mediator_log_level
       end
       base.const_set(:MediatorProxy, proxy)
-      proxy._graph_mediator_logger = GraphMediator.logger || base.logger
-      proxy._graph_mediator_log_level = GraphMediator.log_level
+      proxy._graph_mediator_logger = GraphMediator::Configuration.logger || base.logger
+      proxy._graph_mediator_log_level = GraphMediator::Configuration.log_level
 
       base.send(:include, proxy)
       base.send(:extend, Proxy::ClassMethods)
@@ -130,6 +111,24 @@ module GraphMediator
       return proxy 
     end
 
+  end
+
+  module Configuration
+    # Enable or disable mediation globally.  Default: true
+    # TODO this doesn't effect anything yet
+    mattr_accessor :enable_mediation
+    self.enable_mediation = true
+
+    # Global logger override for GraphMediator.  By default each class
+    # including GraphMediator uses the class's ActiveRecord logger.  Setting
+    # GraphMediator::Configuration.logger overrides this.
+    mattr_accessor :logger
+    
+    # Log level may be adjusted just for GraphMediator globally, or for each class including
+    # GraphMediator.  This should be an ActiveSupport::BufferedLogger log level constant
+    # such as ActiveSupport::BufferedLogger::DEBUG
+    mattr_accessor :log_level
+    self.log_level = ActiveSupport::BufferedLogger::INFO
   end
 
   module Util

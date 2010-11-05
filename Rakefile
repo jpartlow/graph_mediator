@@ -11,10 +11,8 @@ begin
     gem.homepage = "http://github.com/jpartlow/graph_mediator"
     gem.authors = ["Josh Partlow"]
     gem.add_development_dependency "rspec", ">= 1.2.9"
-    gem.add_development_dependency "cucumber", ">= 0"
-    gem.add_development_dependency "factory_girl", ">= 1.3.2"
-    gem.add_dependency "activerecord", ">= 2.3.5"
-    gem.add_dependency "activesupport", ">= 2.3.5"
+    gem.add_dependency "activerecord", "= 2.3.5"
+    gem.add_dependency "activesupport", "= 2.3.5"
     gem.add_dependency "aasm", ">= 2.2.0"
     # gem is a Gem::Specification... see http://www.rubygems.org/read/chapter/20 for additional settings
   end

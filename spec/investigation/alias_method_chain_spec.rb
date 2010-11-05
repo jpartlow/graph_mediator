@@ -48,9 +48,7 @@ describe "alias method chain" do
       'bar'
     end
   end
-puts self 
-puts self.object_id
-puts Bar.object_id
+
   module Baz
     def baz
       'baz'

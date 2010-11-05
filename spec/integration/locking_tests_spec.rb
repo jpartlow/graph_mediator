@@ -36,8 +36,8 @@ describe "GraphMediator locking scenarios" do
     # because the rows do not exist until the mediation transaction completes
     # so no one else is in a position to write first
 
-    # possible?
-    it "should raise stale for conflicts deleting root"
+    # not possible?  ActiveRecord::Locking::Optimistic does not decorate :destroy
+    # it "should raise stale for conflicts deleting root" do
 
     it "should raise Stale for conflicts creating children" do
       @handle2_r1.parties.create(:name => 'Bob')
@@ -48,8 +48,10 @@ describe "GraphMediator locking scenarios" do
       
       before(:each) do
         @handle1_r1.mediated_transaction do
-          @handle1_r1.parties.create(:name => 'Bob')
-          @handle1_r1.parties.create(:name => 'Joe')
+          @party1 = @handle1_r1.parties.create(:name => 'Bob')
+          @party2 = @handle1_r1.parties.create(:name => 'Joe')
+          @room1  = @handle1_r1.lodgings.create(:room_number => 1)
+          @room2  = @handle1_r1.lodgings.create(:room_number => 2)
         end
         @handle2_r1.reload
       end
@@ -70,20 +72,70 @@ describe "GraphMediator locking scenarios" do
         lambda { @handle1_r1.update_attributes(:name => 'baz') }.should raise_error(ActiveRecord::StaleObjectError)
       end
 
+      it "should not raise stale because of updates to its own children counter_caches" do
+        @handle1_r1.mediated_transaction do
+          @handle1_r1.lodge(@party1, :in => @room1)
+          @handle1_r1.parties.first.touch
+        end 
+      end
+
+      it "should increment lock_version for the graph if a dependent is changed" do
+        lambda {
+          @handle1_r1.parties.first.touch
+          @handle1_r1.reload
+        }.should change(@handle1_r1, :lock_version).by(1)
+      end
+
+      context "with lock_version for dependent children" do
+
+        before(:all) do
+#          create_schema do |conn|
+#            conn.add_column(:parties, :lock_version, :integer)
+#          end  
+          Party.reset_column_information
+        end
+
+        after(:all) do
+          create_schema do |conn|
+            conn.remove_column(:parties, :lock_version)
+          end
+          Party.reset_column_information
+        end
+
+        it "will raise stale because of updates to its own children counter_caches" do
+          #Reservation::MediatorProxy._graph_mediator_log_level = 0
+          r = Reservation.create!(:starts => @today, :ends => @today)
+          party, room = nil, nil
+          r.mediated_transaction do
+            party = r.parties.create(:name => 'Joe')
+            room  = r.lodgings.create(:room_number => 1)
+          end
+          r.mediated_transaction do
+            r.lodge(party, :in => room)
+            lambda { party.touch }.should raise_error(ActiveRecord::StaleObjectError)
+          end
+        end
+
+      end
     end
 
     context "within a mediated transaction" do
 
-      it "should not raise stale for changes made within a mediated transaction"
+      it "should not raise stale for changes made within a mediated transaction" do
+        lambda { @handle1_r1.mediated_transaction do
+          @handle1_r1.parties.create(:name => 'Bob')          
+        end }. should change(@handle1_r1, :lock_version).by(1)
+      end
 
       it "should not raise stale for counter_caches within a mediated transaction" do
-        @handle1_r1.mediated_transaction do
+        lambda { @handle1_r1.mediated_transaction do
           @handle1_r1.parties.create(:name => 'Bob')
           @handle1_r1.update_attributes(:name => 'baz')
-        end
+        end }.should change(@handle1_r1, :lock_version).by(1)
       end
     end
   end
+
 end
 
 module GraphMediatorLocking # namespace to prevent helper class conflicts
