@@ -74,13 +74,6 @@ module GraphMediator
           current_lock_version = mediated_instance.send(locking_column) if locking_column
         end
         mediated_instance.reload 
-        # refresh dependent associations
-        mediated_instance.graph_mediator_dependencies.each do |d|
-          has_one = d.to_s.underscore
-          has_many = has_one.pluralize
-          mediated_instance.send(has_one).reload if mediated_instance.respond_to?(has_one)
-          mediated_instance.send(has_many).reload if mediated_instance.respond_to?(has_many)
-        end
         raise(ActiveRecord::StaleObjectError) if current_lock_version && current_lock_version != mediated_instance.send(locking_column)
       end
     end
