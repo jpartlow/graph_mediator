@@ -73,6 +73,7 @@ module GraphMediator
           locking_column = mediated_instance.class.locking_column
           current_lock_version = mediated_instance.send(locking_column) if locking_column
         end
+        debug("reloading")
         mediated_instance.reload 
         raise(ActiveRecord::StaleObjectError) if current_lock_version && current_lock_version != mediated_instance.send(locking_column)
       end
