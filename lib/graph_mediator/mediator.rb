@@ -61,7 +61,7 @@ module GraphMediator
 
     [:debug, :info, :warn, :error, :fatal].each do |level|
       define_method(level) do |message| 
-        mediated_instance.send("m_#{level}", "#{self} - #{aasm_current_state} : #{message}")
+        mediated_instance.send("m_#{level}", "\e[4;32;1m#{self} - #{aasm_current_state} :\e[0m #{message}")
       end
     end
 

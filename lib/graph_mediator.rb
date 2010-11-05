@@ -329,7 +329,12 @@ module GraphMediator
           __send__(:define_method, "#{aliased_target}_with_mediation#{punctuation}") do |*args, &block|
             root_node = (root_node_accessor ? send(root_node_accessor) : self)
             unless root_node.nil?
-              root_node.mediated_transaction { __send__("#{aliased_target}_without_mediation#{punctuation}", *args, &block) }
+              root_node.mediated_transaction do
+                root_node.m_debug("#{root_node} mediating #{aliased_target}#{punctuation} for #{self}")
+                result = __send__("#{aliased_target}_without_mediation#{punctuation}", *args, &block)
+                root_node.m_debug("#{root_node} done mediating #{aliased_target}#{punctuation} for #{self}")
+                result
+              end
             else
               __send__("#{aliased_target}_without_mediation#{punctuation}", *args, &block)
             end
