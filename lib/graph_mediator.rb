@@ -73,6 +73,7 @@ module GraphMediator
       _include_new_proxy(base)
       base.class_inheritable_accessor :__graph_mediator_enabled, :instance_writer => false
       base.__graph_mediator_enabled = true
+      base.__send__(:class_inheritable_array, :graph_mediator_dependencies)
       base.__send__(:_register_for_mediation, *SAVE_METHODS)
     end
 
@@ -473,10 +474,10 @@ module GraphMediator
     # 
     def mediate(*methods)
       options = methods.extract_options!
-      dependencies = options[:dependencies] || []
+      self.graph_mediator_dependencies = Array(options[:dependencies] || [])
  
       _register_for_mediation(*methods)
-      Array(dependencies).each do |dependent_class|
+      graph_mediator_dependencies.each do |dependent_class|
         dependent_class.send(:extend, AliasExtension) unless dependent_class.include?(AliasExtension)
         methods = SAVE_METHODS.clone
         methods << :destroy
