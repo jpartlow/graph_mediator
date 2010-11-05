@@ -74,6 +74,7 @@ module GraphMediator
       base.class_inheritable_accessor :__graph_mediator_enabled, :instance_writer => false
       base.__graph_mediator_enabled = true
       base.__send__(:class_inheritable_array, :graph_mediator_dependencies)
+      base.graph_mediator_dependencies = []
       base.__send__(:_register_for_mediation, *SAVE_METHODS)
     end
 
