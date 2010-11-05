@@ -61,7 +61,7 @@ describe "GraphMediator locking scenarios" do
         lambda { @handle1_r1.update_attributes(:name => 'baz') }.should raise_error(ActiveRecord::StaleObjectError)
       end
  
-      it "should raise Stale conflicts updating just children" do
+      it "should raise Stale for conflicts updating just children" do
         @handle2_r1.parties.first.update_attributes(:name => 'Frank')
         # version has incremented because of update to party, so, :versioning touch fails
         lambda { @handle1_r1.mediated_transaction {} }.should raise_error(ActiveRecord::StaleObjectError)
@@ -153,7 +153,6 @@ describe "GraphMediator locking scenarios for classes without counter_caches" do
       connection.create_table(:bars, :force => true) do |t|
         t.string :name
         t.belongs_to :foo
-        t.integer :lock_version, :default => 0
         t.timestamps
       end
     end
@@ -186,6 +185,22 @@ describe "GraphMediator locking scenarios for classes without counter_caches" do
     @h1_foo1.bars << Bar.create! 
     @h2_foo1.bars.first.destroy
     lambda { @h1_foo1.update_attributes(:name => 'baz') }.should raise_error(ActiveRecord::StaleObjectError)
+  end
+
+  it "should increment lock_version for the graph if a dependent is added" do
+    lambda {
+      @h1_foo1.bars << Bar.create!
+      @h1_foo1.reload
+    }.should change(@h1_foo1, :lock_version).by(1)
+  end
+
+  it "should increment lock_version for the graph if a dependent is deleted" do
+    @h1_foo1.bars << Bar.create!
+    @h1_foo1.reload
+    lambda {
+      @h1_foo1.bars.first.destroy
+      @h1_foo1.reload
+    }.should change(@h1_foo1, :lock_version).by(1)
   end
 
 end
