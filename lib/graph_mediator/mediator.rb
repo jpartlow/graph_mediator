@@ -6,8 +6,33 @@ module GraphMediator
   class Mediator
     include AASM
 
+    class ChangesHash < Hash
+      
+      def <<(ar_instance)
+        raise(ArgumentError, "Expected an ActiveRecord::Dirty instance: #{ar_instance}") unless ar_instance.respond_to?(:changed?)
+        klass = ar_instance.class.base_class
+        changes = ar_instance.changes
+        klass_hash = self[klass] ||= {}
+        case
+          when ar_instance.new_record?
+          then 
+            created_array = klass_hash[:_created] ||= []
+            created_array << changes
+          when ar_instance.destroyed?
+            destroyed_array = klass_hash[:_destroyed] ||= []
+            destroyed_array << ar_instance.id
+          else klass_hash[ar_instance.id] = changes
+        end 
+        return self
+      end
+
+    end
+
     # An instance of the root ActiveRecord object currently under mediation.
     attr_accessor :mediated_instance
+
+    # Changes made to mediated_instance or dependents during a transaction.
+    attr_accessor :changes
 
     aasm_initial_state :idle
     aasm_state :idle
@@ -31,6 +56,7 @@ module GraphMediator
     def initialize(instance)
       raise(ArgumentError, "Given instance has not been initialized for mediation: #{instance}") unless instance.kind_of?(GraphMediator)
       self.mediated_instance = instance
+      self.changes = ChangesHash.new
     end
 
     # Mediation may be disabled at either the Class or instance level.
@@ -44,13 +70,19 @@ module GraphMediator
       mediated_instance.try(:id)
     end
 
+    # Record the ActiveRecord changes state of the current object.  This allows
+    # us to make decisions in after_mediation callbacks based on changed state.
+    def track_changes_for(ar_instance)
+      changes << ar_instance
+    end
+
     def mediate(&block)
       debug("mediate called")
       result = if idle?
         begin_transaction &block
       else
         debug("mediate yield instead")
-        yield
+        yield self
       end
       debug("mediate finished successfully")
       return result
@@ -68,6 +100,7 @@ module GraphMediator
     # Reload them mediated instance.
     # Throws an ActiveRecord::StaleObjectError if lock_column has been updated outside of transaction.
     def refresh_mediated_instance
+      debug "called"
       unless mediated_instance.new_record?
         if mediated_instance.locking_enabled_without_mediation?
           locking_column = mediated_instance.class.locking_column
@@ -89,7 +122,7 @@ module GraphMediator
       else
         disable!
         debug("begin_transaction yielding instead")
-        yield
+        yield self
       end
       done!
       debug("begin_transaction finished successfully")
@@ -102,7 +135,7 @@ module GraphMediator
       mediated_instance.run_callbacks(:before_mediation)
       debug("_wrap_in_callbacks before_mediation completed")
       debug("_wrap_in_callbacks yielding")
-      result = yield
+      result = yield self
       debug("_wrap_in_callbacks yielding completed")
       debug("_wrap_in_callbacks mediate_reconciles")
       mediated_instance.run_callbacks(:mediate_reconciles)

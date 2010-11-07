@@ -15,11 +15,6 @@ end
 
 Spec::Runner.configure do |config|
 
-  def require_reservations
-    require 'reservations/schema'
-    require 'reservations/reservation'
-  end
-  
   # Ensures each listed class is cleared from the objectspace and reloaded.
   # RSpec does not reload classes between tests, so if you're testing class
   # variables/class instance variables, they accumulate state between tests.

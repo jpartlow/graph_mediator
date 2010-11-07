@@ -75,7 +75,7 @@ module GraphMediator
       base.__graph_mediator_enabled = true
       base.__send__(:class_inheritable_array, :graph_mediator_dependencies)
       base.graph_mediator_dependencies = []
-      base.__send__(:_register_for_mediation, *SAVE_METHODS)
+      base.__send__(:_register_for_mediation, *(SAVE_METHODS.clone << { :track_changes => true }))
     end
 
     # Inserts a new #{base}::MediatorProxy module with Proxy included.
@@ -84,7 +84,7 @@ module GraphMediator
     def _include_new_proxy(base)
       # XXX How can _include_new_proxy be made cleaner or at least clearer?
       proxy = Module.new do
-        include ActiveSupport::Callbacks
+#        include ActiveSupport::Callbacks
         include Proxy
         mattr_accessor :_graph_mediator_logger
         mattr_accessor :_graph_mediator_log_level
@@ -232,6 +232,12 @@ module GraphMediator
       current_mediator.try(:aasm_current_state)
     end
 
+    # Returns the hash of changes to the graph being tracked by the current
+    # mediator or nil if not currently mediating.
+    def mediated_changes
+      current_mediator.try(:changes)
+    end
+
     # Turn off mediation for this instance.  If currently mediating, it
     # will finish normally, but new mediators will start disabled.
     def disable_mediation!
@@ -255,7 +261,7 @@ module GraphMediator
         !@graph_mediator_mediation_disabled
     end
 
-    %w(destroy save save! toggle toggle! update_attribute update_attributes update_attributes!).each do |method|
+    %w(save save! toggle toggle! update_attribute update_attributes update_attributes!).each do |method|
       base, punctuation = parse_method_punctuation(method)
       define_method("#{base}_without_mediation#{punctuation}") do |*args,&block|
         disable_mediation!
@@ -320,20 +326,29 @@ module GraphMediator
     # overridden separately if needed.
     #
     # * options:
-    #   * :through => root node accessor that will be the target of the mediated_transaction.
-    #   By default self is assumed.
+    #   * :through => root node accessor that will be the target of the
+    #   mediated_transaction.  By default self is assumed.
+    #   * :track_changes => if true, the mediator will track changes such
+    #   that they can be reviewed after_mediation.  The after_mediation
+    #   callbacks occur after dirty has completed and changes are normally lost.
+    #   False by default.  Normally only applied to save and destroy methods.
     def _register_for_mediation(*methods)
       options = methods.extract_options!
       root_node_accessor = options[:through]
+      track_changes = options[:track_changes]
       methods.each do |method|
+        saveing = method.to_s =~ /save/
+        destroying = method.to_s =~ /destroy/
         _alias_method_chain_ensuring_inheritability(method, :mediation) do |aliased_target,punctuation|
           __send__(:define_method, "#{aliased_target}_with_mediation#{punctuation}") do |*args, &block|
             root_node = (root_node_accessor ? send(root_node_accessor) : self)
             unless root_node.nil?
-              root_node.mediated_transaction do
-                root_node.m_debug("#{root_node} mediating #{aliased_target}#{punctuation} for #{self}")
+              root_node.mediated_transaction do |mediator|
+                mediator.debug("#{root_node} mediating #{aliased_target}#{punctuation} for #{self}")
+                mediator.track_changes_for(self) if track_changes && saveing
                 result = __send__("#{aliased_target}_without_mediation#{punctuation}", *args, &block)
-                root_node.m_debug("#{root_node} done mediating #{aliased_target}#{punctuation} for #{self}")
+                mediator.track_changes_for(self) if track_changes && destroying
+                mediator.debug("#{root_node} done mediating #{aliased_target}#{punctuation} for #{self}")
                 result
               end
             else
@@ -404,9 +419,9 @@ module GraphMediator
   #
   # = Callbacks
   #
-  # The mediate() method takes options to set callbacks.  Or you can set them directly with
-  # a method symbol, array of method symbols or a Proc.  They may be called multiple times
-  # and may be added to in subclasses.
+  # The mediate() method takes options to set callbacks.  Or you can set them
+  # directly with a method symbol, array of method symbols or a Proc.  They may
+  # be called multiple times and may be added to in subclasses.
   #
   # * before_mediation - runs before mediation is begun
   # * - mediate and save
@@ -482,7 +497,7 @@ module GraphMediator
         dependent_class.send(:extend, AliasExtension) unless dependent_class.include?(AliasExtension)
         methods = SAVE_METHODS.clone
         methods << :destroy
-        methods << { :through => self.class_of_active_record_descendant(self).to_s.demodulize.underscore }
+        methods << { :through => self.class_of_active_record_descendant(self).to_s.demodulize.underscore, :track_changes => true }
         dependent_class.send(:_register_for_mediation, *methods)
       end
       mediate_reconciles(options[:when_reconciling]) if options[:when_reconciling]

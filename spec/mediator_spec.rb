@@ -42,6 +42,14 @@ describe "GraphMediator::Mediator" do
     @traceables_callbacks.should == [:before, :reconcile, :cache]
   end
 
+  it "should capture changes" do
+    @m.changes.should == {}
+    @t.name = :foo
+    @t.should be_changed
+    @m.track_changes_for(@t)
+    @m.changes.should == {Traceable => { @t.id => { 'name'=> [:gizmo, :foo] }}}
+  end
+
   # XXX Actually, this seems to be okay
   it "should raise a MediatorException if attempt a transaction before_create because save is called recursively" do
     begin

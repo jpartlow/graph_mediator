@@ -456,6 +456,13 @@ describe "GraphMediator" do
       end
     end
 
+    it "should expose mediated_changes" do
+      @f.mediated_changes.should be_nil
+      @f.mediated_transaction do
+        @f.mediated_changes.should == {}
+      end
+    end
+
 # TODO - may need to move this up to the class
 
     it "should generate a unique mediator_hash_key for each MediatorProxy" do

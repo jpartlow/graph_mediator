@@ -1,15 +1,10 @@
 require File.expand_path(File.join(File.dirname(__FILE__), '..', 'spec_helper'))
 
-require_reservations
-
-class Reservation
-  include GraphMediator
-  mediate :dependencies => [Lodging, Party], 
-    :when_reconciling => :reconcile,
-    :when_cacheing => :cache
-  def reconcile; :reconcile; end
-  def cache; :cache; end
-end
+require 'reservations/schema'
+require 'reservations/party_lodging'
+require 'reservations/lodging'
+require 'reservations/party'
+require 'reservations/reservation'
 
 describe "GraphMediator locking scenarios" do
 
@@ -103,7 +98,7 @@ describe "GraphMediator locking scenarios" do
         end
 
         it "will raise stale because of updates to its own children counter_caches" do
-          #Reservation::MediatorProxy._graph_mediator_log_level = 0
+          Reservation::MediatorProxy._graph_mediator_log_level = 0
           r = Reservation.create!(:starts => @today, :ends => @today)
           party, room = nil, nil
           r.mediated_transaction do
