@@ -207,7 +207,6 @@ module GraphMediator
       return result
     end
 
-
     def _wrap_in_callbacks
       debug("_wrap_in_callbacks called")
       debug("_wrap_in_callbacks before_mediation")

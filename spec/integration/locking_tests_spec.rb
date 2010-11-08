@@ -1,12 +1,15 @@
 require File.expand_path(File.join(File.dirname(__FILE__), '..', 'spec_helper'))
 
-require 'reservations/schema'
 require 'reservations/party_lodging'
 require 'reservations/lodging'
 require 'reservations/party'
 require 'reservations/reservation'
 
 describe "GraphMediator locking scenarios" do
+
+  before(:all) do
+    load 'reservations/schema.rb'
+  end
 
   before(:each) do
     @today = Date.today

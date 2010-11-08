@@ -1,33 +1,35 @@
 require File.expand_path(File.join(File.dirname(__FILE__), '..', 'spec_helper'))
 
-create_schema do |conn|
-  conn.create_table(:changes_roots, :force => true) do |t|
-    t.string :name
-    t.string :state
-    t.integer :changes_dependents_count
-  end
-  conn.create_table(:changes_dependents, :force => true) do |t|
-    t.string :name
-    t.integer :number
-    t.belongs_to :changes_root
-  end
-end
-
-class ChangesDependent < ActiveRecord::Base
-  belongs_to :changes_root, :counter_cache => true
-end
-class ChangesRoot < ActiveRecord::Base
-  cattr_accessor :tests
-  has_many :changes_dependents
-  include GraphMediator
-  mediate :dependencies => [ChangesDependent]
-  mediate_reconciles :reconciles do |instance| 
-    instance.tests.call(instance) unless instance.tests.nil?
-  end
-  def reconciles; :reconciles; end
-end
-
 describe "GraphMediator change tracking scenarios" do
+
+  before(:all) do
+    create_schema do |conn|
+      conn.create_table(:changes_roots, :force => true) do |t|
+        t.string :name
+        t.string :state
+        t.integer :changes_dependents_count
+      end
+      conn.create_table(:changes_dependents, :force => true) do |t|
+        t.string :name
+        t.integer :number
+        t.belongs_to :changes_root
+      end
+    end
+    
+    class ChangesDependent < ActiveRecord::Base
+      belongs_to :changes_root, :counter_cache => true
+    end
+    class ChangesRoot < ActiveRecord::Base
+      cattr_accessor :tests
+      has_many :changes_dependents
+      include GraphMediator
+      mediate :dependencies => [ChangesDependent]
+      mediate_reconciles :reconciles do |instance| 
+        instance.tests.call(instance) unless instance.tests.nil?
+      end
+      def reconciles; :reconciles; end
+    end
+  end
 
   before(:each) do
     ChangesRoot.tests = nil
