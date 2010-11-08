@@ -39,6 +39,36 @@ describe "Nesting of mediated_transactions" do
     @traceables_callbacks.should == [:before, :reconcile, :cache]
   end
 
+  it "should handle deeper nesting" do
+    @t.mediated_transaction do
+      @t.mediated_transaction do
+        @t.update_attributes(:name => 'foo')
+      end
+    end
+    @t.__send__(:current_mediator).should be_nil
+    @traceables_callbacks.should == [:before, :reconcile, :cache]
+  end
+
+  it "should handle errors raised while deeply nested" do
+    lambda { @t.mediated_transaction do
+      @t.mediated_transaction do
+        @t.mediated_transaction { raise }
+      end
+    end }.should raise_error(RuntimeError)
+    @t.__send__(:current_mediator).should be_nil
+    @traceables_callbacks.should == [:before]
+  end
+
+  it "should handle errors raised and recovered while deeply nested" do
+    @t.mediated_transaction do
+      @t.mediated_transaction do
+        lambda { @t.mediated_transaction { raise } }.should raise_error(RuntimeError)
+      end
+    end
+    @t.__send__(:current_mediator).should be_nil
+    @traceables_callbacks.should == [:before, :reconcile, :cache]
+  end
+
   it "should call after_mediation only once even if mediated_transaction is called on a new instance" do
     Traceable.logger.debug "\n\n\nnew test"
     new_t = Traceable.new(:name => 'new')
@@ -46,4 +76,38 @@ describe "Nesting of mediated_transactions" do
     @traceables_callbacks.should == [:before, :reconcile, :cache]
   end
 
+  it "should clear mediator if unrecovered error raised in nested transaction" do
+    lambda { @t.mediated_transaction do
+      @t.mediated_transaction { raise }
+    end }.should raise_error(RuntimeError)
+    @t.__send__(:current_mediator).should be_nil
+    @traceables_callbacks.should == [:before]
+  end
+
+  it "should finish mediation if error raised and recovered in nested transaction" do
+    @t.mediated_transaction do
+      lambda { @t.mediated_transaction { raise } }.should raise_error(RuntimeError)
+    end
+    @t.__send__(:current_mediator).should be_nil
+    @traceables_callbacks.should == [:before, :reconcile, :cache]
+  end
+
+  it "should run no callbacks if disabled, regardless of nesting" do
+    @t.disable_mediation!
+    @t.mediated_transaction do
+      @t.mediated_transaction { }
+    end
+    @traceables_callbacks.should == []
+  end
+
+  it "should continue to be disabled if error raised and recovered in a nested transaction when mediation is disabled" do
+    @t.disable_mediation!
+    @t.mediated_transaction do
+      lambda { @t.mediated_transaction { raise } }.should raise_error(RuntimeError)
+    end
+    @t.__send__(:current_mediator).should be_nil
+    @traceables_callbacks.should == []
+  end
+
+  
 end

@@ -102,6 +102,9 @@ module GraphMediator
     # Changes made to mediated_instance or dependents during a transaction.
     attr_accessor :changes
 
+    # Tracks nested transactions
+    attr_accessor :stack
+
     aasm_initial_state :idle
     aasm_state :idle
     aasm_state :mediating
@@ -118,13 +121,14 @@ module GraphMediator
       transitions :from => :idle, :to => :disabled
     end
     aasm_event :done do
-      transitions :from => [:mediating, :versioning, :disabled], :to => :idle
+      transitions :from => [:idle, :mediating, :versioning, :disabled], :to => :idle
     end
 
     def initialize(instance)
       raise(ArgumentError, "Given instance has not been initialized for mediation: #{instance}") unless instance.kind_of?(GraphMediator)
       self.mediated_instance = instance
       self.changes = ChangesHash.new
+      self.stack = []
     end
 
     # Mediation may be disabled at either the Class or instance level.
@@ -144,19 +148,26 @@ module GraphMediator
       changes << ar_instance
     end
 
+    # True if we are currently in a nested mediated transaction call.
+    def nested?
+      stack.size > 1
+    end
+
     def mediate(&block)
       debug("mediate called")
+      stack.push(self)
       result = if idle?
         begin_transaction &block
       else
-        debug("mediate yield instead")
+        debug("nested transaction; mediate yielding instead")
         yield self
       end
       debug("mediate finished successfully")
       return result
-    rescue StandardError => e
-      done! # very important -- need our state back to idle so that calling methods can ensure cleanup
-      raise e
+
+    ensure
+      done! unless nested? # very important, so that calling methods can ensure cleanup
+      stack.pop
     end
 
     [:debug, :info, :warn, :error, :fatal].each do |level|
@@ -189,13 +200,13 @@ module GraphMediator
         _wrap_in_callbacks &block 
       else
         disable!
-        debug("begin_transaction yielding instead")
+        debug("mediation disabled; begin_transaction yielding instead")
         yield self
       end
-      done!
       debug("begin_transaction finished successfully")
       return result
     end
+
 
     def _wrap_in_callbacks
       debug("_wrap_in_callbacks called")

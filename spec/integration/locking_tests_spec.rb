@@ -98,6 +98,7 @@ describe "GraphMediator locking scenarios" do
         end
 
         it "will raise stale because of updates to its own children counter_caches" do
+#          Reservation::MediatorProxy._graph_mediator_logger = TestLogger.new
           Reservation::MediatorProxy._graph_mediator_log_level = 0
           r = Reservation.create!(:starts => @today, :ends => @today)
           party, room = nil, nil
