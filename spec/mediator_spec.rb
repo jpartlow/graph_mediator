@@ -90,4 +90,68 @@ describe "GraphMediator::Mediator" do
 
   end
 
+  context "with a GraphMediator::Mediator::ChangesHash" do
+  
+    before(:each) do
+      @ch = GraphMediator::Mediator::ChangesHash.new
+    end
+ 
+    it "should capture changes for new objects" do
+      @ch << Traceable.new
+      @ch.should == { Traceable => { :_created => [ {} ] } }
+    end
+
+    it "should capture changes for changed objects" do
+      @t.name = :bar
+      @ch << @t
+      @ch.should == { Traceable => { @t.id => { 'name' => [:gizmo, :bar] } } }
+    end
+
+    it "should capture changes for destroyed objects" do
+      @t.destroy
+      @ch << @t
+      @ch.should == { Traceable => { :_destroyed => [@t.id] } }
+    end
+ 
+    it "should answer questions about changed attributes" do
+      @t.name = :bar
+      @ch << @t
+      @ch.changed_name?.should be_true
+      @ch.changed_frotz?.should be_false
+    end
+ 
+    it "should answer questions about multiple changed attributes" do
+      @t.name = :bar
+      @t.state = :frotzed
+      @ch << @t
+      @ch.all_changed?(:name, :state).should be_true
+      @ch.all_changed?(:name, :number).should be_false
+      @ch.any_changed?(:name, :number).should be_true
+    end
+ 
+    it "should answer questions about added dependents" do
+      new_t = Traceable.new(:name => :dependent)
+      @ch << new_t
+      @ch.added_dependent?(Traceable).should be_true
+      @ch.added_or_destroyed_dependent?(Traceable).should be_true
+      @ch.touched_any_dependent?(Traceable).should be_true
+    end
+
+    it "should answer questions about deleted dependents" do
+      @t.destroy
+      @ch << @t
+      @ch.destroyed_dependent?(Traceable).should be_true
+      @ch.added_or_destroyed_dependent?(Traceable).should be_true
+      @ch.touched_any_dependent?(Traceable).should be_true
+    end
+
+    it "should answer questions about changed dependents" do
+      @t.name = :bar
+      @ch << @t
+      @ch.altered_dependent?(Traceable).should be_true
+      @ch.added_or_destroyed_dependent?(Traceable).should be_false
+      @ch.touched_any_dependent?(Traceable).should be_true
+    end
+
+  end
 end

@@ -36,6 +36,8 @@ Spec::Runner.configure do |config|
     create_schema do |conn|
       conn.create_table(:traceables, :force => true) do |t|
         t.string :name
+        t.string :state
+        t.integer :number
         t.integer :lock_version, :default => 0
         t.timestamps
       end

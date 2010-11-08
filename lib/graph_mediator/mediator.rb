@@ -7,11 +7,19 @@ module GraphMediator
     include AASM
 
     class ChangesHash < Hash
-      
+     
+      attr_reader :index
+
+      def initialize(*args, &block)
+        @index = {}
+        super
+      end
+ 
       def <<(ar_instance)
         raise(ArgumentError, "Expected an ActiveRecord::Dirty instance: #{ar_instance}") unless ar_instance.respond_to?(:changed?)
         klass = ar_instance.class.base_class
         changes = ar_instance.changes
+        index.merge!(changes)
         klass_hash = self[klass] ||= {}
         case
           when ar_instance.new_record?
@@ -26,6 +34,66 @@ module GraphMediator
         return self
       end
 
+      # True if the given attribute was changed in root or a dependent.
+      # Shortcut:
+      # changed_#{attribute}?
+      def attribute_changed?(attribute)
+        index.key?(attribute.to_s)
+      end
+
+      # True if all the passed attributes were changed in root or a dependent.
+      def all_changed?(*attributes)
+        attributes.all? { |a| attribute_changed?(a) }
+      end
+
+      # True if any of the passed attributes were changed in root or a dependent.
+      def any_changed?(*attributes)
+        attributes.any? { |a| attribute_changed?(a) }
+      end
+
+      # True if a dependent of the given class was added.
+      def added_dependent?(klass)
+        _class_hash(klass).key?(:_created)
+      end
+
+      # True if a dependent of the given class was destroyed.
+      def destroyed_dependent?(klass)
+        _class_hash(klass).key?(:_destroyed)
+      end
+
+      # True if an existing dependent of the given class was updated.
+      def altered_dependent?(klass)
+        !_class_hash(klass).reject { |k,v| k == :_created || k == :_destroyed }.empty?
+      end
+
+      # True only if a dependent of the given class was added or destroyed. 
+      def added_or_destroyed_dependent?(klass)
+        added_dependent?(klass) || destroyed_dependent?(klass)
+      end
+
+      # True if a dependent of the given class as added, destroyed or updated.
+      def touched_any_dependent?(klass)
+        !_class_hash(klass).empty?
+      end
+
+      def method_missing(method)
+        case method.to_s
+          when /changed_(.*)\?/
+          then
+            attribute = $1
+            self.class.__send__(:define_method, method) do
+              attribute_changed?(attribute) 
+            end
+            return send(method)
+          else super       
+        end
+      end
+      
+      private
+
+      def _class_hash(klass)
+        self.fetch(klass.base_class)
+      end 
     end
 
     # An instance of the root ActiveRecord object currently under mediation.
