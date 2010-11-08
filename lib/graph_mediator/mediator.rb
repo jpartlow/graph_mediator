@@ -92,7 +92,7 @@ module GraphMediator
       private
 
       def _class_hash(klass)
-        self.fetch(klass.base_class)
+        self.fetch(klass.base_class, nil) || {}
       end 
     end
 

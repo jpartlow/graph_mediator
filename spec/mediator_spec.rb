@@ -128,6 +128,14 @@ describe "GraphMediator::Mediator" do
       @ch.all_changed?(:name, :number).should be_false
       @ch.any_changed?(:name, :number).should be_true
     end
+
+    it "should answer questions about dependents not in the changes hash" do
+      @ch.should == {}
+      @ch.added_dependent?(Traceable).should == false
+      @ch.destroyed_dependent?(Traceable).should == false
+      @ch.altered_dependent?(Traceable).should == false
+      @ch.touched_any_dependent?(Traceable).should == false
+    end
  
     it "should answer questions about added dependents" do
       new_t = Traceable.new(:name => :dependent)
