@@ -238,6 +238,12 @@ describe "GraphMediator" do
       @traceables_callbacks.should == []
     end
 
+    it "should have update_attributes_without_mediation convenience methods" do
+      @t.update_attributes_without_mediation(:name => :foo)
+      @t.update_attributes_without_mediation!(:name => :bar)
+      @traceables_callbacks.should == []
+    end
+
     it "should handle saving a new record" do
       n = Traceable.new(:name => 'new')
       n.save!

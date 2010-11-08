@@ -265,7 +265,7 @@ module GraphMediator
       base, punctuation = parse_method_punctuation(method)
       define_method("#{base}_without_mediation#{punctuation}") do |*args,&block|
         disable_mediation!
-        send(method) 
+        send(method, *args, &block) 
         enable_mediation!
       end
     end
