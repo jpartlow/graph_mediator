@@ -168,7 +168,7 @@ module GraphMediator
     # Reload them mediated instance.
     # Throws an ActiveRecord::StaleObjectError if lock_column has been updated outside of transaction.
     def refresh_mediated_instance
-      debug "called"
+      debug "refresh_mediated_instance called"
       unless mediated_instance.new_record?
         if mediated_instance.locking_enabled_without_mediation?
           locking_column = mediated_instance.class.locking_column
@@ -216,7 +216,7 @@ module GraphMediator
       bump!
       mediated_instance.touch if mediated_instance.class.locking_enabled?
       debug("_wrap_in_callbacks bumping done")
-      # TODO work out bump column
+      refresh_mediated_instance # after having cached and versioned 
       return result
     end
   end
