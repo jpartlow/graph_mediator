@@ -285,6 +285,13 @@ describe "GraphMediator" do
       @traceables_callbacks.should == [:before, :nested_before_create!, :reconcile, :cache]
     end
 
+    it "should cull mediator after an exception in mediation" do
+      lambda { @t.mediated_transaction do
+        raise
+      end }.should raise_error(RuntimeError)
+      @t.__send__(:current_mediator).should be_nil
+    end
+
     it "should override save" do
       @t.save
       @traceables_callbacks.should == [:before, :reconcile, :cache,] 

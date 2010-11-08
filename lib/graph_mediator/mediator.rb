@@ -154,9 +154,9 @@ module GraphMediator
       end
       debug("mediate finished successfully")
       return result
-    rescue SystemStackError => e
-      # out of control recursion, probably from trying to touch a new record in a before_create?
-      raise(GraphMediator::MediatorException, "SystemStackError (#{e}).  Is there an attempt to call a mediated_transaction in a before_create callback?")
+    rescue StandardError => e
+      done! # very important -- need our state back to idle so that calling methods can ensure cleanup
+      raise e
     end
 
     [:debug, :info, :warn, :error, :fatal].each do |level|
@@ -165,8 +165,8 @@ module GraphMediator
       end
     end
 
-    # Reload them mediated instance.
-    # Throws an ActiveRecord::StaleObjectError if lock_column has been updated outside of transaction.
+    # Reload them mediated instance.  Throws an ActiveRecord::StaleObjectError
+    # if lock_column has been updated outside of transaction.
     def refresh_mediated_instance
       debug "refresh_mediated_instance called"
       unless mediated_instance.new_record?

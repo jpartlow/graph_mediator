@@ -50,8 +50,7 @@ describe "GraphMediator::Mediator" do
     @m.changes.should == {Traceable => { @t.id => { 'name'=> [:gizmo, :foo] }}}
   end
 
-  # XXX Actually, this seems to be okay
-  it "should raise a MediatorException if attempt a transaction before_create because save is called recursively" do
+  it "should not blow the stack if attempt a transaction in before_create" do
     begin
       Traceable.before_create { |i| i.mediated_transaction { i.callbacks << :before_create } }
       t = Traceable.new(:name => :foo)
@@ -61,6 +60,43 @@ describe "GraphMediator::Mediator" do
     ensure
       Traceable.before_create_callback_chain.clear
     end
+  end
+
+  it "should reset to idle state if an error is thrown before mediation" do
+    class << @t
+      def before; raise; end
+    end
+    lambda { @m.mediate {} }.should raise_error(RuntimeError)
+    @m.aasm_current_state.should == :idle
+  end
+
+  it "should reset to idle state if an error is thrown during mediation" do
+    lambda { @m.mediate { raise } }.should raise_error(RuntimeError)
+    @m.aasm_current_state.should == :idle
+  end
+
+  it "should reset to idle state if an error is thrown after mediation" do
+    class << @t
+      def reconcile; raise; end
+    end
+    lambda { @m.mediate {} }.should raise_error(RuntimeError)
+    @m.aasm_current_state.should == :idle
+  end
+
+  it "should reset to idle state if an error is thrown when cacheing" do
+    class << @t
+      def cache; raise; end
+    end
+    lambda { @m.mediate {} }.should raise_error(RuntimeError)
+    @m.aasm_current_state.should == :idle
+  end
+  
+  it "should reset to idle state if an error is thrown when versioning" do
+    class << @t
+      def touch; raise; end
+    end
+    lambda { @m.mediate {} }.should raise_error(RuntimeError)
+    @m.aasm_current_state.should == :idle
   end
 
   context "when enabling and disabling mediation" do
