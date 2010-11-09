@@ -214,19 +214,22 @@ module GraphMediator
       debug("_wrap_in_callbacks before_mediation completed")
       debug("_wrap_in_callbacks yielding")
       result = yield self
-      debug("_wrap_in_callbacks yielding completed")
-      debug("_wrap_in_callbacks mediate_reconciles")
-      mediated_instance.run_callbacks(:mediate_reconciles)
-      refresh_mediated_instance # after having reconciled
-      debug("_wrap_in_callbacks mediate_reconciles completed")
-      debug("_wrap_in_callbacks mediate_caches")
-      mediated_instance.run_callbacks(:mediate_caches)
-      debug("_wrap_in_callbacks mediate_caches completed")
-      debug("_wrap_in_callbacks bumping")
-      bump!
-      mediated_instance.touch if mediated_instance.class.locking_enabled?
-      debug("_wrap_in_callbacks bumping done")
-      refresh_mediated_instance # after having cached and versioned 
+      # skip after_mediation if failed validation
+      unless !result.nil? && result == false
+        debug("_wrap_in_callbacks yielding completed")
+        debug("_wrap_in_callbacks mediate_reconciles")
+        mediated_instance.run_callbacks(:mediate_reconciles)
+        refresh_mediated_instance # after having reconciled
+        debug("_wrap_in_callbacks mediate_reconciles completed")
+        debug("_wrap_in_callbacks mediate_caches")
+        mediated_instance.run_callbacks(:mediate_caches)
+        debug("_wrap_in_callbacks mediate_caches completed")
+        debug("_wrap_in_callbacks bumping")
+        bump!
+        mediated_instance.touch if mediated_instance.class.locking_enabled?
+        debug("_wrap_in_callbacks bumping done")
+        refresh_mediated_instance # after having cached and versioned 
+      end
       return result
     end
   end

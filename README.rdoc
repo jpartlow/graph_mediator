@@ -43,7 +43,8 @@ incremented when dependent objects are updated.  This is because there is
 nothing to touch on the root record to trigger the +lock_column+ update.
 
 GraphMediator ensures that after_mediation is run only once within the context
-of a mediated transaction.
+of a mediated transaction.  If the block being mediated returns false, the
+after_mediation is skipped; this allows for validations.
 
 == Usage
 

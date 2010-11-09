@@ -52,6 +52,8 @@ Spec::Runner.configure do |config|
        
       mediate :when_reconciling => :reconcile, :when_cacheing => :cache
       before_mediation :before
+
+      validates_presence_of :name
    
       def before; callbacks << :before; end
       def reconcile; callbacks << :reconcile; end
