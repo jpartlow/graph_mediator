@@ -21,6 +21,13 @@ describe "GraphMediator locking scenarios" do
     Lodging.create!.should_not be_nil
   end
 
+  it "should increment lock_version for save_without_mediation" do
+    lambda {
+      @handle1_r1.starts = @today - 1
+      @handle1_r1.save_without_mediation
+    }.should change(@handle1_r1, :lock_version).by(1)
+  end
+
   context "with optimistic locking for the graph" do
 
     it "should raise Stale for conflicts updating root" do
