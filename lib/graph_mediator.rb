@@ -261,7 +261,7 @@ module GraphMediator
         !@graph_mediator_mediation_disabled
     end
 
-    %w(save save! toggle toggle! update_attribute update_attributes update_attributes!).each do |method|
+    %w(save save! touch toggle toggle! update_attribute update_attributes update_attributes!).each do |method|
       base, punctuation = parse_method_punctuation(method)
       define_method("#{base}_without_mediation#{punctuation}") do |*args,&block|
         disable_mediation!
