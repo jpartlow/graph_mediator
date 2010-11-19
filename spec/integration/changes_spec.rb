@@ -142,4 +142,18 @@ describe "GraphMediator change tracking scenarios" do
     mediated_changes.changes_root_changed_name?.should be_false
   end
 
+  it "should handle attribute queries for classes that have had no changes recorded" do
+    r = ChangesRoot.new(:name => :foo)
+    r.save_without_mediation!
+    run = false
+    r.tests = Proc.new do |instance|
+      mediated_changes = instance.mediated_changes
+      mediated_changes.should == { ChangesRoot => { r.id => {} }}
+      mediated_changes.changes_dependent_changed_name?.should be_false
+      run = true
+    end
+    r.save! 
+    run.should be_true 
+  end
+
 end

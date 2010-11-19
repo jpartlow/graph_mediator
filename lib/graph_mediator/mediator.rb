@@ -111,7 +111,7 @@ module GraphMediator
       private
 
       def _class_hash(klass)
-        self.fetch(klass.base_class, nil) || {}
+        self.fetch(klass.base_class, nil) || IndexedHash.new
       end 
     end
 
