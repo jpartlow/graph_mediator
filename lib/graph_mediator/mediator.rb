@@ -6,39 +6,56 @@ module GraphMediator
   class Mediator
     include AASM
 
-    class ChangesHash < Hash
-     
+    class IndexedHash < Hash
       attr_reader :index
+      attr_reader :klass
 
       def initialize(*args, &block)
         @index = {}
         super
       end
+
+      def <<(ar_instance, klass, changes)
+        add_to_index(changes)
+        case
+          when ar_instance.new_record? then
+            created_array = self[:_created] ||= []
+            created_array << changes
+          when ar_instance.destroyed? then
+            destroyed_array = self[:_destroyed] ||= []
+            destroyed_array << ar_instance.id
+          else self[ar_instance.id] = changes
+        end 
+      end
+
+      def add_to_index(changes)
+        index.merge!(changes)
+      end
+    end
  
+    class ChangesHash < IndexedHash
+    
       def <<(ar_instance)
         raise(ArgumentError, "Expected an ActiveRecord::Dirty instance: #{ar_instance}") unless ar_instance.respond_to?(:changed?)
         klass = ar_instance.class.base_class
         changes = ar_instance.changes
-        index.merge!(changes)
-        klass_hash = self[klass] ||= {}
-        case
-          when ar_instance.new_record?
-          then 
-            created_array = klass_hash[:_created] ||= []
-            created_array << changes
-          when ar_instance.destroyed?
-            destroyed_array = klass_hash[:_destroyed] ||= []
-            destroyed_array << ar_instance.id
-          else klass_hash[ar_instance.id] = changes
-        end 
+        add_to_index(changes)
+        klass_hash = self[klass] ||= IndexedHash.new
+        klass_hash.<<(ar_instance, klass, changes)
         return self
       end
 
       # True if the given attribute was changed in root or a dependent.
+      #
+      # * attribute - symbol or string for attribute to lookup
+      # * klass - optionally, restrict lookup to changes for a particular class.
+      #
       # Shortcut:
       # changed_#{attribute}?
-      def attribute_changed?(attribute)
-        index.key?(attribute.to_s)
+      # #{my_class}_changed_#{attribute}?
+      #
+      def attribute_changed?(attribute, klass = nil)
+        (klass ? _class_hash(klass) : self).index.key?(attribute.to_s)
       end
 
       # True if all the passed attributes were changed in root or a dependent.
@@ -78,11 +95,13 @@ module GraphMediator
 
       def method_missing(method)
         case method.to_s
-          when /changed_(.*)\?/
+          when /(?:(.*)_)?changed_(.*)\?/
           then
-            attribute = $1
+            klass = $1
+            klass = klass.classify.constantize if klass
+            attribute = $2
             self.class.__send__(:define_method, method) do
-              attribute_changed?(attribute) 
+              attribute_changed?(attribute, klass) 
             end
             return send(method)
           else super       

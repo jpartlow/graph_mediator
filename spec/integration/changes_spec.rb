@@ -107,4 +107,39 @@ describe "GraphMediator change tracking scenarios" do
     run.should be_true
   end
 
+  it "should differentiate changes to attributes with the same name in different classes." do
+    r = ChangesRoot.new(:name => :foo)
+    r.save_without_mediation!
+    d = r.changes_dependents.create!(:name => :bar)
+
+    d.number = 3
+    dep_changes = d.changes
+    r.name = 'different'
+    root_changes = r.changes
+    run = false
+    mediated_changes = nil
+    r.tests = Proc.new do |instance|
+      d.save!
+      mediated_changes = instance.mediated_changes
+      mediated_changes.should == { ChangesRoot => { r.id => root_changes }, ChangesDependent => { d.id => dep_changes } }
+      run = true
+    end
+    r.save!
+    run.should be_true
+    mediated_changes.changed_name?.should be_true
+    mediated_changes.attribute_changed?(:name, ChangesDependent).should be_false
+    mediated_changes.changes_dependent_changed_name?.should be_false
+    mediated_changes.changes_root_changed_name?.should be_true 
+
+    r.state = :new_state
+    root_changes = r.changes 
+    d.name = 'also different'
+    dep_changes = d.changes
+    r.save!
+    run.should be_true
+    mediated_changes.changed_name?.should be_true
+    mediated_changes.changes_dependent_changed_name?.should be_true
+    mediated_changes.changes_root_changed_name?.should be_false
+  end
+
 end
