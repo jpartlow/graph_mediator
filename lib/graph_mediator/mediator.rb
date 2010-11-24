@@ -88,11 +88,13 @@ module GraphMediator
         added_dependent?(klass) || destroyed_dependent?(klass)
       end
 
+# TODO this and altered_dependent may give false positive for empty change hashes (if a record is saved with no changes, there will be a +record_id+ => {} entry)
       # True if a dependent of the given class as added, destroyed or updated.
       def touched_any_dependent?(klass)
         !_class_hash(klass).empty?
       end
 
+# TODO raise an error if class does not respond to method?  but what about general changed_foo? calls?  The point is that this syntax can give you false negatives, because changed_foo? will be false even foo isn't even an attribute -- misspelling an attribute can lead to difficult bugs.  This helper may not be a good idea...
       def method_missing(method)
         case method.to_s
           when /(?:(.*)_)?changed_(.*)\?/
@@ -100,10 +102,13 @@ module GraphMediator
             klass = $1
             klass = klass.classify.constantize if klass
             attribute = $2
-            self.class.__send__(:define_method, method) do
-              attribute_changed?(attribute, klass) 
-            end
-            return send(method)
+# XXX Don't define a method here, or you run into issues with Rails class reloading.
+# After the first call, you hold a reference to an old Class which will no longer work as
+# a key in a new changes hash.
+#            self.class.__send__(:define_method, method) do
+              return attribute_changed?(attribute, klass) 
+#            end
+#            return send(method)
           else super       
         end
       end
