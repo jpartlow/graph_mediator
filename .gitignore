@@ -12,13 +12,15 @@ tmtags
 
 ## VIM
 *.swp
+.current
+.vimrc
 
 ## PROJECT::GENERAL
 coverage
 rdoc
 pkg
+*.gem
 
 ## PROJECT::SPECIFIC
-.current
-.vimrc
 *.log
+thread-test

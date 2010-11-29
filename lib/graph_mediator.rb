@@ -1,6 +1,7 @@
 require 'active_support'
 require 'graph_mediator/mediator'
 require 'graph_mediator/locking'
+require 'graph_mediator/version'
 
 # = GraphMediator =
 #
@@ -316,7 +317,7 @@ module GraphMediator
 
   end
 
-  module AliasExtension
+  module AliasExtension #:nodoc:
     include Util
 
     private

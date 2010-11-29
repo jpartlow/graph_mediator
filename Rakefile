@@ -1,25 +1,9 @@
+lib = File.expand_path('../lib/', __FILE__)
+$:.unshift lib unless $:.include?(lib)
+
 require 'rubygems'
 require 'rake'
-
-begin
-  require 'jeweler'
-  Jeweler::Tasks.new do |gem|
-    gem.name = "graph_mediator"
-    gem.summary = %Q{Mediates state changes between a set of interdependent ActiveRecord objects.}
-    gem.description = %Q{Mediates state changes between a set of interdependent ActiveRecord objects.}
-    gem.email = "jpartlow@glatisant.org"
-    gem.homepage = "http://github.com/jpartlow/graph_mediator"
-    gem.authors = ["Josh Partlow"]
-    gem.add_development_dependency "rspec", ">= 1.2.9"
-    gem.add_dependency "activerecord", "= 2.3.5"
-    gem.add_dependency "activesupport", "= 2.3.5"
-    gem.add_dependency "aasm", ">= 2.2.0"
-    # gem is a Gem::Specification... see http://www.rubygems.org/read/chapter/20 for additional settings
-  end
-  Jeweler::GemcutterTasks.new
-rescue LoadError
-  puts "Jeweler (or a dependency) not available. Install it with: gem install jeweler"
-end
+require 'graph_mediator/version'
 
 require 'spec/rake/spectask'
 Spec::Rake::SpecTask.new(:spec) do |spec|
@@ -33,27 +17,16 @@ Spec::Rake::SpecTask.new(:rcov) do |spec|
   spec.rcov = true
 end
 
-task :spec => :check_dependencies
-
-begin
-  require 'cucumber/rake/task'
-  Cucumber::Rake::Task.new(:features)
-
-  task :features => :check_dependencies
-rescue LoadError
-  task :features do
-    abort "Cucumber is not available. In order to run features, you must: sudo gem install cucumber"
-  end
-end
-
 task :default => :spec
 
 require 'rake/rdoctask'
 Rake::RDocTask.new do |rdoc|
-  version = File.exist?('VERSION') ? File.read('VERSION') : ""
+  version = GraphMediator::VERSION
 
   rdoc.rdoc_dir = 'rdoc'
   rdoc.title = "graph_mediator #{version}"
+  rdoc.main = 'README.rdoc'
   rdoc.rdoc_files.include('README*')
+  rdoc.rdoc_files.include('LICENSE*')
   rdoc.rdoc_files.include('lib/**/*.rb')
 end
