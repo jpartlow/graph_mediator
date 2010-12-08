@@ -63,7 +63,8 @@ module GraphMediator
         attributes.all? { |a| attribute_changed?(a) }
       end
 
-      # True if any of the passed attributes were changed in root or a dependent.
+      # True if any of the passed attributes were changed in root or a
+      # dependent.
       def any_changed?(*attributes)
         attributes.any? { |a| attribute_changed?(a) }
       end
@@ -102,9 +103,9 @@ module GraphMediator
             klass = $1
             klass = klass.classify.constantize if klass
             attribute = $2
-# XXX Don't define a method here, or you run into issues with Rails class reloading.
-# After the first call, you hold a reference to an old Class which will no longer work as
-# a key in a new changes hash.
+# XXX Don't define a method here, or you run into issues with Rails class
+# reloading.  After the first call, you hold a reference to an old Class which
+# will no longer work as a key in a new changes hash.
 #            self.class.__send__(:define_method, method) do
               return attribute_changed?(attribute, klass) 
 #            end
@@ -200,7 +201,7 @@ module GraphMediator
       end
     end
 
-    # Reload them mediated instance.  Throws an ActiveRecord::StaleObjectError
+    # Reload the mediated instance.  Throws an ActiveRecord::StaleObjectError
     # if lock_column has been updated outside of transaction.
     def refresh_mediated_instance
       debug "refresh_mediated_instance called"

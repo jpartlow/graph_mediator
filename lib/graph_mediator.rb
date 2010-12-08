@@ -3,20 +3,23 @@ require 'graph_mediator/mediator'
 require 'graph_mediator/locking'
 require 'graph_mediator/version'
 
-# = GraphMediator =
+# = GraphMediator
 #
-# GraphMediator is used to coordinate changes between a graph of ActiveRecord objects
-# related to a root node.  See README.rdoc for details.
+# GraphMediator is used to coordinate changes between a graph of ActiveRecord
+# objects related to a root node.  See README.rdoc for details.
 #
-# GraphMediator::Base::DSL - is the simple class macro language used to set up mediation.
+# GraphMediator::Base::DSL - is the simple class macro language used to set up
+# mediation.
 #
 # == Versioning and Optimistic Locking
 #
-# If you include an integer +lock_version+ column in your class, it will be incremented
-# only once within a mediated_transaction and will serve as the optimistic locking check
-# for the entire graph so long as you have declared all your dependent models for mediation.
+# If you include an integer +lock_version+ column in your class, it will be
+# incremented only once within a mediated_transaction and will serve as the
+# optimistic locking check for the entire graph so long as you have declared
+# all your dependent models for mediation.
 #
-# Outside of a mediated_transaction, +lock_version+ will increment per update as usual.
+# Outside of a mediated_transaction, +lock_version+ will increment per update
+# as usual.
 #
 # == Convenience Methods for Save Without Mediation
 #
@@ -26,14 +29,14 @@ require 'graph_mediator/version'
 # 
 # For example, save_without_mediation! is equivalent to:
 #
-# instance.disable_mediation!
-# instance.save!
-# instance.enable_mediation!
+#  instance.disable_mediation!
+#  instance.save!
+#  instance.enable_mediation!
 #
 # == Overriding
 # 
-# GraphMediator overrides ActiveRecord's save_without_transaction to slip in mediation 
-# just before the save process is wrapped in a transaction.
+# GraphMediator overrides ActiveRecord's save_without_transaction to slip in
+# mediation just before the save process is wrapped in a transaction.
 # 
 # * save_without_transaction
 # * save_without_transaction_with_mediation
@@ -43,11 +46,11 @@ require 'graph_mediator/version'
 # defined locally by GraphMediator, so you can override with something like
 # alias_method_chain, but will need to be in a subclass to use super.
 # 
-# My original intention was to define aliased overrides in MediatorProxy if the target
-# was a method in a superclass (like save), so that the implementation class could
-# make a simple def foo; something; super; end override, but this is prevented by a bug
-# in ruby 1.8 with aliasing of methods that use super in a module.
-# http://redmine.ruby-lang.org/issues/show/734
+# My original intention was to define aliased overrides in MediatorProxy if the
+# target was a method in a superclass (like save), so that the implementation
+# class could make a simple def foo; something; super; end override, but this
+# is prevented by a bug in ruby 1.8 with aliasing of methods that use super in
+# a module.  http://redmine.ruby-lang.org/issues/show/734
 # 
 module GraphMediator
   
@@ -126,9 +129,10 @@ module GraphMediator
     # GraphMediator::Configuration.logger overrides this.
     mattr_accessor :logger
     
-    # Log level may be adjusted just for GraphMediator globally, or for each class including
-    # GraphMediator.  This should be an ActiveSupport::BufferedLogger log level constant
-    # such as ActiveSupport::BufferedLogger::DEBUG
+    # Log level may be adjusted just for GraphMediator globally, or for each
+    # class including GraphMediator.  This should be an
+    # ActiveSupport::BufferedLogger log level constant such as
+    # ActiveSupport::BufferedLogger::DEBUG
     mattr_accessor :log_level
     self.log_level = ActiveSupport::BufferedLogger::INFO
   end
@@ -179,8 +183,8 @@ module GraphMediator
       # (This is overwritten by GraphMediator._include_new_proxy)
       def mediator_hash_key; end
 
-      # Unique key to access a thread local array of mediators of new records for
-      # specific #{base}::MediatorProxy type.
+      # Unique key to access a thread local array of mediators of new records
+      # for specific #{base}::MediatorProxy type.
       #
       # (This is overwritten by GraphMediator._include_new_proxy)
       def mediator_new_array_key; end
@@ -212,7 +216,10 @@ module GraphMediator
     def mediated_transaction(&block)
       m_debug("#{self}.mediated_transaction called")
       mediator = _get_mediator
-      result = mediator.mediate(&block)
+      result = nil
+      transaction do
+        result = mediator.mediate(&block)
+      end
       m_debug("#{self}.mediated_transaction completed successfully")
       return result
     ensure
@@ -288,8 +295,8 @@ module GraphMediator
       self.class.mediators_for_new_records
     end
 
-    # Accessor for the mediator associated with this instance's id, or nil if we are
-    # not currently mediating.
+    # Accessor for the mediator associated with this instance's id, or nil if
+    # we are not currently mediating.
     def current_mediator
       m_debug("#{self}.current_mediator called")
       mediator = mediators[self.id]
@@ -323,16 +330,17 @@ module GraphMediator
     private
 
     # Wraps each method in a mediated_transaction call.
-    # The original method is aliased as :method_without_mediation so that it can be
-    # overridden separately if needed.
+    # The original method is aliased as :method_without_mediation so that it
+    # can be overridden separately if needed.
     #
     # * options:
     #   * :through => root node accessor that will be the target of the
-    #   mediated_transaction.  By default self is assumed.
+    #     mediated_transaction.  By default self is assumed.
     #   * :track_changes => if true, the mediator will track changes such
-    #   that they can be reviewed after_mediation.  The after_mediation
-    #   callbacks occur after dirty has completed and changes are normally lost.
-    #   False by default.  Normally only applied to save and destroy methods.
+    #     that they can be reviewed after_mediation.  The after_mediation
+    #     callbacks occur after dirty has completed and changes are normally
+    #     lost.  False by default.  Normally only applied to save and destroy
+    #     methods.
     def _register_for_mediation(*methods)
       options = methods.extract_options!
       root_node_accessor = options[:through]
@@ -426,16 +434,16 @@ module GraphMediator
   #
   # * before_mediation - runs before mediation is begun
   # * - mediate and save
-  # * mediate_reconciles - after saveing the instance, run any routines to make further 
-  #   adjustments to the structure of the graph or non-cache attributes
+  # * mediate_reconciles - after saveing the instance, run any routines to make
+  #   further adjustments to the structure of the graph or non-cache attributes
   # * mediate_caches - routines for updating cache values
   #
   # Example: 
   #
-  # mediate_reconciles :bar do |instance|
-  #   instance.something_else
-  # end
-  # mediate_reconciles :baz
+  #  mediate_reconciles :bar do |instance|
+  #    instance.something_else
+  #  end
+  #  mediate_reconciles :baz
   #
   # will ensure that [:bar, <block>, :baz] are run in 
   # sequence after :foo is done saveing within the context of a mediated
@@ -448,7 +456,7 @@ module GraphMediator
     # for mediation.
     #
     # * :methods => list of methods to mediate (automatically wrap in a
-    # mediated_transaction call)
+    #   mediated_transaction call)
     #
     # ActiveRecord::Base.save is decorated for mediation when GraphMediator
     # is included into your model.  If you have additional methods which 
@@ -462,15 +470,15 @@ module GraphMediator
     # * :options => hash of options
     #   * :dependencies => list of dependent member classes whose save methods
     #     should be decorated for mediation as well.
-    #   * :when_reconciling => list of methods to execute during the after_mediation 
-    #     reconcilation phase
-    #   * :when_cacheing => list of methods to execute during the after_mediation 
-    #     cacheing phase
+    #   * :when_reconciling => list of methods to execute during the
+    #     after_mediation reconcilation phase
+    #   * :when_cacheing => list of methods to execute during the
+    #     after_mediation cacheing phase
     #
-    # mediate :update_children,
-    #   :dependencies => Child,
-    #   :when_reconciling => :reconcile,
-    #   :when_caching => :cache 
+    #  mediate :update_children,
+    #    :dependencies => Child,
+    #    :when_reconciling => :reconcile,
+    #    :when_caching => :cache 
     #
     # = Dependent Classes
     #
@@ -483,11 +491,13 @@ module GraphMediator
     #
     # GraphMediator uses the class's lock_column (default +lock_version+) and
     # +updated_at+ or +updated_on+ for versioning and locks checks during
-    # mediation.  The lock_column is incremented only once during a mediated_transaction.
+    # mediation.  The lock_column is incremented only once during a
+    # mediated_transaction.
     # 
-    # +Unless both these columns are present in the schema, versioning/locking
-    # will not happen.+  A lock_column by itself will not be updated unless
-    # there is an updated_at/on timestamp available to touch.
+    # <em>Unless both these columns are present in the schema,
+    # versioning/locking will not happen.</em>  A lock_column by itself will
+    # not be updated unless there is an updated_at/on timestamp available to
+    # touch.
     # 
     def mediate(*methods)
       options = methods.extract_options!

@@ -200,7 +200,7 @@ describe "DingoPen" do
       dp.lock_version.should == 1
     end
 
-    it "should succed without mediation" do
+    it "should succeed without mediation" do
       begin
         DingoPen.disable_all_mediation!
         dp = DingoPen.new(@dingo_pen_attributes)

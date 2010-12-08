@@ -1,6 +1,6 @@
 module GraphMediator
-  # Overrides to ActiveRecord::Optimistic::Locking to ensure that lock_column is updated
-  # during the +versioning+ phase of a mediated transaction.
+  # Overrides to ActiveRecord::Optimistic::Locking to ensure that lock_column
+  # is updated during the +versioning+ phase of a mediated transaction.
   module Locking
 
     def self.included(base)
@@ -10,8 +10,8 @@ module GraphMediator
     end
 
     module ClassMethods
-      # Overrides ActiveRecord::Base.update_counters to skip locking if currently mediating
-      # the passed id.
+      # Overrides ActiveRecord::Base.update_counters to skip locking if
+      # currently mediating the passed id.
       def update_counters(ids, counters)
         # id may be an array of ids...
         unless currently_mediating?(ids)
@@ -32,9 +32,10 @@ module GraphMediator
       # Overrides ActiveRecord::Locking::Optimistic#locking_enabled?
       #
       # * True if we are not in a mediated_transaction and lock_enabled? is true
-      # per ActiveRecord (lock_column exists and lock_optimistically? true)
+      #   per ActiveRecord (lock_column exists and lock_optimistically? true)
       # * True if we are in a mediated_transaction and lock_enabled? is true per
-      # ActiveRecord and we are in the midst of the version bumping phase of the transaction.
+      #   ActiveRecord and we are in the midst of the version bumping phase of
+      #   the transaction.
       # 
       # Effectively this ensures that an optimistic lock check and version bump
       # occurs as usual outside of mediation but only at the end of the
