@@ -80,6 +80,9 @@ module GraphMediator
       base.__send__(:class_inheritable_array, :graph_mediator_dependencies)
       base.graph_mediator_dependencies = []
       base.__send__(:_register_for_mediation, *(SAVE_METHODS.clone << { :track_changes => true }))
+      base.class_eval do 
+        _alias_method_chain_ensuring_inheritability(:destroy, :flag)
+      end
     end
 
     # Inserts a new #{base}::MediatorProxy module with Proxy included.
@@ -104,10 +107,12 @@ module GraphMediator
       key = base.to_s.underscore.gsub('/','_').upcase
       hash_key = "GRAPH_MEDIATOR_#{key}_HASH_KEY"
       new_array_key = "GRAPH_MEDIATOR_#{key}_NEW_ARRAY_KEY"
+      being_destroyed_array_key = "GRAPH_MEDIATOR_#{key}_BEING_DESTROYED_ARRAY_KEY"
       eigen = base.instance_eval { class << self; self; end }
       eigen.class_eval do
         define_method(:mediator_hash_key) { hash_key }
         define_method(:mediator_new_array_key) { new_array_key }
+        define_method(:mediator_being_destroyed_array_key) { being_destroyed_array_key }
       end
 
       # Relies on ActiveSupport::Callbacks (which is included
@@ -189,27 +194,38 @@ module GraphMediator
       # (This is overwritten by GraphMediator._include_new_proxy)
       def mediator_new_array_key; end
 
+      # Unique key to access a thread local array of ids of instances that
+      # are currently in the process of being deleted.
+      def mediator_being_destroyed_array_key; end
+
       # The hash of Mediator instances active in this Thread for the Proxy's 
       # base class.
       #
       # instance.id => Mediator of (instance)
       #
       def mediators
-        unless Thread.current[mediator_hash_key]
-          Thread.current[mediator_hash_key] = {}
-        end
-        Thread.current[mediator_hash_key]
+        _generate_thread_local(mediator_hash_key, Hash)
       end
 
       # An array of Mediator instances mediating new records in this Thread for
       # the Proxy's base class.
       def mediators_for_new_records
-        unless Thread.current[mediator_new_array_key]
-          Thread.current[mediator_new_array_key] = []
-        end
-        Thread.current[mediator_new_array_key]
+        _generate_thread_local(mediator_new_array_key, Array)
       end
 
+      # An array of instance ids currently being in the process of being destroyed.
+      def instances_being_destroyed
+        _generate_thread_local(mediator_being_destroyed_array_key, Array)
+      end
+
+      private
+
+      def _generate_thread_local(key, initial)
+        unless Thread.current[key]
+          Thread.current[key] = initial.kind_of?(Class) ? initial.new : initial
+        end
+        Thread.current[key]
+      end
     end
 
     # Wraps the given block in a transaction and begins mediation. 
@@ -257,6 +273,42 @@ module GraphMediator
       @graph_mediator_mediation_disabled = false
     end
 
+    # True if this instance is currently in the middle of being destroyed.  Set
+    # by code slipped around the core ActiveRecord::Base#destroy via
+    # destroy_with_flag.
+    #
+    # Used by dependents in the mediation process to check whether they should
+    # update their root (see notes under the +mediate+ method).
+    def being_destroyed?
+      instances_being_destroyed.include?(id)  
+    end
+
+    # Surrounding the base destroy ensures that instance is marked in Thread
+    # before any other callbacks occur (notably the collection destroy
+    # dependents pushed into the before_destroy callback).
+    #
+    # If we instead relied on on the before_destroy, after_destroy callbacks,
+    # we would be at the mercy of declaration order in the class for the
+    # GraphMediator include versus the association macro.
+    def destroy_with_flag
+      _mark_being_destroyed
+      destroy_without_flag
+    ensure
+      _unmark_being_destroyed
+    end
+
+    private
+
+    def _mark_being_destroyed
+      instances_being_destroyed << id
+    end
+
+    def _unmark_being_destroyed
+      instances_being_destroyed.delete(id) 
+    end
+
+    public
+
     # By default, every instance will be mediated and this will return true.
     # You can turn mediation on or off on an instance by instance basis with
     # calls to disable_mediation! or enable_mediation!.
@@ -293,6 +345,10 @@ module GraphMediator
   
     def mediators_for_new_records
       self.class.mediators_for_new_records
+    end
+
+    def instances_being_destroyed
+      self.class.instances_being_destroyed
     end
 
     # Accessor for the mediator associated with this instance's id, or nil if
@@ -335,7 +391,8 @@ module GraphMediator
     #
     # * options:
     #   * :through => root node accessor that will be the target of the
-    #     mediated_transaction.  By default self is assumed.
+    #     mediated_transaction.  By default self is assumed.  This is used for
+    #     tracking in the given root node the fact that dependents have changed.
     #   * :track_changes => if true, the mediator will track changes such
     #     that they can be reviewed after_mediation.  The after_mediation
     #     callbacks occur after dirty has completed and changes are normally
@@ -351,7 +408,7 @@ module GraphMediator
         _alias_method_chain_ensuring_inheritability(method, :mediation) do |aliased_target,punctuation|
           __send__(:define_method, "#{aliased_target}_with_mediation#{punctuation}") do |*args, &block|
             root_node = (root_node_accessor ? send(root_node_accessor) : self)
-            unless root_node.nil?
+            unless root_node.nil? || root_node.being_destroyed?
               root_node.mediated_transaction do |mediator|
                 mediator.debug("#{root_node} mediating #{aliased_target}#{punctuation} for #{self}")
                 mediator.track_changes_for(self) if track_changes && saveing
@@ -485,7 +542,26 @@ module GraphMediator
     # Dependent classes have their save methods mediated as well.  However, a
     # dependent class must provide an accessor for the root node, so that a
     # mediated_transaction can be begun in the root node when a dependent is
-    # changed.
+    # changed.  Dependent clases also have their destroy methods mediated so
+    # that destruction of a dependent also registers as a change to the 
+    # graph.
+    # 
+    # == Deletion and Dependents
+    # 
+    # When a class participating in mediation assigns a dependent to mediation,
+    # destruction of that dependent class will cause an update to the parent's
+    # lock_version.  This can cause a problem in Rails 2.3.6+ because
+    # ActiveRecord#destroy is wrapped with an optimistic locking check.  When
+    # the dependent association is set to :dependent => :destroy, the
+    # dependents are automatically destroyed before the parent, which causes
+    # graph_mediator to update the lock_version of the parent, which then fails
+    # the optimistic locking check when it is sent for destruction in
+    # ActiveRecord::Locking::Optimistic#destroy_with_lock.
+    # 
+    # To avoid this, GraphMediator causes an activerecord instance to flag when
+    # it is in the process of destroying itself.  This flag is then checked by
+    # dependents so they can bypass touching the parent when they are being
+    # destroyed.
     #
     # = Versioning and Optimistic Locking
     #

@@ -485,7 +485,11 @@ describe "GraphMediator" do
     it "should generate a unique mediator_new_array_key for each MediatorProxy" do
       @f.class.mediator_new_array_key.should == 'GRAPH_MEDIATOR_GRAPH_MEDIATOR_SPEC_FOO_NEW_ARRAY_KEY'
     end
- 
+
+    it "should generate a unique mediator_being_destroyed_array_key for each MediatorProxy" do
+      @f.class.mediator_being_destroyed_array_key.should == 'GRAPH_MEDIATOR_GRAPH_MEDIATOR_SPEC_FOO_BEING_DESTROYED_ARRAY_KEY'
+    end
+
     it "should access an array of mediators for new records" do
       @f.__send__(:mediators_for_new_records).should == []
     end
@@ -494,6 +498,9 @@ describe "GraphMediator" do
       @f.__send__(:mediators).should == {}
     end
 
+    it "should access an array of ids for instances being destroyed" do
+      @f.__send__(:instances_being_destroyed).should == []
+    end
   end
 end
 
