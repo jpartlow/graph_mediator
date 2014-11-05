@@ -1,8 +1,8 @@
 $LOAD_PATH.unshift(File.dirname(__FILE__))
 $LOAD_PATH.unshift(File.join(File.dirname(__FILE__), '..', 'lib'))
 require 'graph_mediator'
-require 'spec'
-require 'spec/autorun'
+require 'rspec'
+require 'rspec/autorun'
 require 'pp'
 
 require 'database'
@@ -13,7 +13,7 @@ class TestLogger
   end
 end
 
-Spec::Runner.configure do |config|
+RSpec.configure do |config|
 
   # Ensures each listed class is cleared from the objectspace and reloaded.
   # RSpec does not reload classes between tests, so if you're testing class
