@@ -62,9 +62,7 @@ describe "module super" do
     f.deeper_foo.should == 'deeper_foo'
     f.bar.should == 'bar'
     f.baz.should == 'baz barred'
-    # ruby 1.8 issue (see insert_subclass_spec.rb as well)
-    # http://redmine.ruby-lang.org/issues/show/734
-    lambda { f.baz_original }.should raise_error(NoMethodError)
+    f.baz_original.should == 'baz'
   end
 
   it "cannot alias a method higher up the chain from a module" do

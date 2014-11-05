@@ -6,6 +6,7 @@ require 'graph_mediator/version'
 Gem::Specification.new do |s|
   s.name = %q{graph_mediator}
   s.version = GraphMediator::VERSION
+  s.required_ruby_version = ">= 1.9.2"
   s.required_rubygems_version = ">= 1.3.6"
 
   s.authors = ["Josh Partlow"]

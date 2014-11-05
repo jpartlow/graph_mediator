@@ -11,7 +11,7 @@ class SelfDecorating
           method_defined_here = (klass.instance_methods(false) + klass.private_instance_methods(false)).include?(RUBY_VERSION < '1.9' ? target.to_s : target)
           unless method_defined_here 
             klass.send(:define_method, target) do |*args, &block|
-              super
+              super(*args, &block)
             end
           end
           unless klass.method_defined?(without_method)
@@ -46,7 +46,7 @@ class SelfDecorating
 #      end
 #      alias_method "#{method}_without_secret", method
       define_method(method) do |*args,&block|
-        super + ' with secret'
+        super(*args, &block) + ' with secret'
       end
       methods_to_alias << method
     end 

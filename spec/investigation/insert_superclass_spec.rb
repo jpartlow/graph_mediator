@@ -9,7 +9,7 @@ describe "insert superclass" do
       methods.each do |m|
         alias_method "#{m}_without_decoration", m
         define_method(m) do |*args,&block|
-          super + " decorated" 
+          super(*args, &block) + " decorated"
         end
       end
     end 

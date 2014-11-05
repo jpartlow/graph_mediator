@@ -112,9 +112,7 @@ EOS
     s.dingo.should == 'dingo'
     SubClass.send(:include, Other)
     s.dingo.should == 'dingo other'
-    # 1.8 bug - aliased method that calls super in a module
-    # http://redmine.ruby-lang.org/issues/show/734
-    lambda { s.dingo_without_other }.should raise_error(NoMethodError)
+    s.dingo_without_other
     s.bat.should == 'bat'
   end
 end

@@ -426,7 +426,7 @@ module GraphMediator
     end
 
     def _method_defined(method, anywhere = true)
-      (instance_methods(anywhere) + private_instance_methods(anywhere)).include?(RUBY_VERSION < '1.9' ? method.to_s : method)
+      (instance_methods(anywhere) + private_instance_methods(anywhere)).include?(RUBY_VERSION < '1.9' ? method.to_s : method.to_sym)
     end
 
     # This uses Tammo Freese's patch to alias_method_chain.
@@ -452,7 +452,7 @@ module GraphMediator
       unless method_defined_here
         module_eval do
           define_method(target) do |*args, &block|
-            super
+            super(*args, &block)
           end
         end 
       end  
@@ -463,9 +463,9 @@ module GraphMediator
         # create with_method
         yield(aliased_target, punctuation)
       end
-  
+
       target_method_exists = _method_defined(with_method)
-      raise NameError unless target_method_exists
+      raise(NameError, "Cannot find target method #{with_method}") unless target_method_exists
       
       module_eval do
         define_method(target) do |*args, &block|
