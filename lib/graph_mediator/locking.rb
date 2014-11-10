@@ -22,7 +22,7 @@ module GraphMediator
           Array(ids).each do |id|
             currently_mediating?(id) ?
               update_counters_without_lock(id, counters) :
-              super
+              super(id, counters)
           end
         end
       end
