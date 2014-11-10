@@ -1,4 +1,5 @@
 require 'active_support'
+require 'active_support/core_ext/module'
 require 'graph_mediator/mediator'
 require 'graph_mediator/locking'
 require 'graph_mediator/version'
@@ -55,7 +56,7 @@ require 'graph_mediator/version'
 module GraphMediator
   
   CALLBACKS = [:before_mediation, :mediate_reconciles, :mediate_caches, :mediate_bumps]
-  SAVE_METHODS = [:save_without_transactions, :save_without_transactions!]
+  SAVE_METHODS = [:create_or_update]
  
   # We want lib/graph_mediator to define GraphMediator constant
   require 'graph_mediator/mediator'
