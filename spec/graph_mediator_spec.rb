@@ -155,28 +155,22 @@ describe "GraphMediator" do
     end
 
     it "should get the when_reconciling option" do
-#      Bar.__graph_mediator_reconciliation_callbacks.should == []
       Bar.mediate :when_reconciling => :foo
-      Bar.mediate_reconciles_callback_chain.should == [:foo]
-#      Bar.__graph_mediator_reconciliation_callbacks.size.should == 1
-#      Bar.__graph_mediator_reconciliation_callbacks.first.should be_kind_of(Proc)
+      Bar._mediate_reconciles_callbacks.map { |c| c.filter }.should == [:foo]
     end
  
     it "should collect methods through mediate_reconciles" do
-#      Bar.__graph_mediator_reconciliation_callbacks.should == []
       Bar.mediate :when_reconciling => [:foo, :bar]
       Bar.mediate_reconciles :baz do
         biscuit
       end
-      Bar.mediate_reconciles_callback_chain.should include(:foo, :bar, :baz)
-      Bar.mediate_reconciles_callback_chain.should have(4).elements
-#      Bar.__graph_mediator_reconciliation_callbacks.should have3
-#      Bar.__graph_mediator_reconciliation_callbacks.each { |e| e.should be_kind_of(Proc) }
+      Bar._mediate_reconciles_callbacks.map { |c| c.filter }.should include(:foo, :bar, :baz)
+      Bar._mediate_reconciles_callbacks.should have(4).elements
     end
  
     it "should get the when_cacheing option" do
       Bar.mediate :when_cacheing => :foo
-      Bar.mediate_caches_callback_chain.should == [:foo]
+      Bar._mediate_caches_callbacks.map { |c| c.filter }.should == [:foo]
     end
   
     it "should collect methods through mediate_caches" do
@@ -184,8 +178,8 @@ describe "GraphMediator" do
       Bar.mediate_caches :baz do
         biscuit
       end
-      Bar.mediate_caches_callback_chain.should include(:foo, :bar, :baz)
-      Bar.mediate_caches_callback_chain.should have(4).elements
+      Bar._mediate_caches_callbacks.map { |c| c.filter }.should include(:foo, :bar, :baz)
+      Bar._mediate_caches_callbacks.should have(4).elements
     end
  
     it "should get the dependencies option" do
@@ -322,12 +316,12 @@ describe "GraphMediator" do
       @t.new_record?.should be_false
     end
 
-    it "should allow me to decorate save_with_mediation" do
+    it "should allow me to decorate create_or_update_with_mediation" do
       Traceable.class_eval do
-        alias_method :save_without_transactions_with_mediation_without_logging, :save_without_transactions_with_mediation
-        def save_without_transactions_with_mediation(*args)
+        alias_method :create_or_update_with_mediation_without_logging, :create_or_update_with_mediation
+        def create_or_update_with_mediation(*args)
           callbacks << '...saving...'
-          save_without_transactions_with_mediation_without_logging(*args)
+          create_or_update_with_mediation_without_logging(*args)
         end
       end
       @t.save
@@ -335,12 +329,12 @@ describe "GraphMediator" do
       @t.new_record?.should be_false
     end
 
-    it "should allow me to decorate save_without_mediation" do
+    it "should allow me to decorate create_or_update_without_mediation" do
       Traceable.class_eval do
-        alias_method :save_without_transactions_without_mediation_without_logging, :save_without_transactions_without_mediation
-        def save_without_transactions_without_mediation(*args)
+        alias_method :create_or_update_without_mediation_without_logging, :create_or_update_without_mediation
+        def create_or_update_without_mediation(*args)
           callbacks << '...saving...'
-          save_without_transactions_without_mediation_without_logging(*args)
+          create_or_update_without_mediation_without_logging(*args)
         end
       end
       @t.save
