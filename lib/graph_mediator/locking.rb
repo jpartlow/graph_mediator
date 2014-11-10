@@ -26,6 +26,20 @@ module GraphMediator
           end
         end
       end
+
+      # This was copied directly from ActiveRecord::CounterCache unfortunately.
+      def update_counters_without_lock(id, counters)
+        updates = counters.map do |counter_name, value|
+          operator = value < 0 ? '-' : '+'
+          quoted_column = connection.quote_column_name(counter_name)
+          "#{quoted_column} = COALESCE(#{quoted_column}, 0) #{operator} #{value.abs}"
+        end
+
+        ActiveRecord::IdentityMap.remove_by_id(symbolized_base_class, id) if ActiveRecord::IdentityMap.enabled?
+
+        update_all(updates.join(', '), primary_key => id )
+      end
+
     end
 
     module InstanceMethods
