@@ -592,5 +592,26 @@ module GraphMediator
       mediate_caches(options[:when_cacheing]) if options[:when_cacheing]
     end
 
+    def before_mediation(methods, &block)
+      set_callbacks(:before_mediation, methods, &block)
+    end
+
+    def mediate_reconciles(methods, &block)
+      set_callbacks(:mediate_reconciles, methods, &block)
+    end
+
+    def mediate_caches(methods, &block)
+      set_callbacks(:mediate_caches, methods, &block)
+    end
+
+    private
+
+    def set_callbacks(chain, methods, &block)
+      callbacks = Array(methods)
+      callbacks << block if block
+      callbacks.each do |callback|
+        set_callback(chain, :before, callback)
+      end
+    end
   end
 end
