@@ -76,9 +76,9 @@ module GraphMediator
 
     def initialize_for_mediation(base)
       _include_new_proxy(base)
-      base.class_inheritable_accessor :__graph_mediator_enabled, :instance_writer => false
+      base.class_attribute :__graph_mediator_enabled, :instance_writer => false
       base.__graph_mediator_enabled = true
-      base.__send__(:class_inheritable_array, :graph_mediator_dependencies)
+      base.__send__(:class_attribute, :graph_mediator_dependencies)
       base.graph_mediator_dependencies = []
       base.__send__(:_register_for_mediation, *(SAVE_METHODS.clone << { :track_changes => true }))
       base.class_eval do 
