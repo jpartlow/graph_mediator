@@ -212,7 +212,7 @@ module GraphMediator
         end
         debug("reloading")
         mediated_instance.reload 
-        raise(ActiveRecord::StaleObjectError) if current_lock_version && current_lock_version != mediated_instance.send(locking_column)
+        raise(ActiveRecord::StaleObjectError.new(mediated_instance, "touched during mediation")) if current_lock_version && current_lock_version != mediated_instance.send(locking_column)
       end
     end
 

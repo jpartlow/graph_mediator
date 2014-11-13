@@ -404,7 +404,7 @@ module GraphMediator
       root_node_accessor = options[:through]
       track_changes = options[:track_changes]
       methods.each do |method|
-        saveing = method.to_s =~ /save/
+        saveing = method.to_s == 'create_or_update'
         destroying = method.to_s =~ /destroy/
         _alias_method_chain_ensuring_inheritability(method, :mediation) do |aliased_target,punctuation|
           __send__(:define_method, "#{aliased_target}_with_mediation#{punctuation}") do |*args, &block|
