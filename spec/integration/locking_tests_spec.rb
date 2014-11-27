@@ -145,22 +145,17 @@ describe "GraphMediator locking scenarios" do
 end
 
 module GraphMediatorLocking # namespace to prevent helper class conflicts
+  create_schema do |connection|
+    connection.create_table(:foos, :force => true) do |t|
+      t.string :name
+      t.integer :lock_version, :default => 0
+      t.timestamps
+    end
 
-describe "GraphMediator locking scenarios for classes without counter_caches" do
-
-  before(:all) do
-    create_schema do |connection|
-      connection.create_table(:foos, :force => true) do |t|
-        t.string :name
-        t.integer :lock_version, :default => 0
-        t.timestamps
-      end
-  
-      connection.create_table(:bars, :force => true) do |t|
-        t.string :name
-        t.belongs_to :foo
-        t.timestamps
-      end
+    connection.create_table(:bars, :force => true) do |t|
+      t.string :name
+      t.belongs_to :foo
+      t.timestamps
     end
   end
 
@@ -174,6 +169,7 @@ describe "GraphMediator locking scenarios for classes without counter_caches" do
     has_many :bars
   end
 
+describe "GraphMediator locking scenarios for classes without counter_caches" do
   before(:each) do
     @h1_foo1 = Foo.create(:name => 'one')
     @h2_foo1 = Foo.find(@h1_foo1.id)
