@@ -4,7 +4,7 @@ module GraphMediatorSpec # name space so these helper classes don't collide with
 
 create_schema do |conn|
   conn.create_table(:foos, :force => true) do |t|
-    t.string :foo
+    t.string :name
     t.integer :lock_version, :default => 0
     t.timestamps
   end
@@ -376,7 +376,7 @@ describe "GraphMediator" do
       it "should update lock_version normally if mediation is off" do
         @f.save!
         @f.lock_version.should == 0
-        @f.update_attributes(:foo => 'foo')
+        @f.update_attributes(:name => 'foo')
         @f.lock_version.should == 1
       end
     end
