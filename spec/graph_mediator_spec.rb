@@ -2,6 +2,34 @@ require File.expand_path(File.join(File.dirname(__FILE__), 'spec_helper'))
 
 module GraphMediatorSpec # name space so these helper classes don't collide with another running spec
 
+create_schema do |conn|
+  conn.create_table(:foos, :force => true) do |t|
+    t.string :foo
+    t.integer :lock_version, :default => 0
+    t.timestamps
+  end
+
+  conn.create_table(:bars, :force => true) do |t|
+    t.string :bar
+    t.integer :lock_version, :default => 0
+    t.timestamps
+  end
+
+  conn.create_table(:untimestamped_things, :force => true) do |t|
+    t.string :name
+    t.integer :lock_version, :default => 0
+  end
+
+  conn.create_table(:unlocked_things, :force => true) do |t|
+    t.string :name
+    t.timestamps
+  end
+
+  conn.create_table(:plain_things, :force => true) do |t|
+    t.string :name
+  end
+end
+
 class Foo < ActiveRecord::Base
   include GraphMediator
 end
@@ -19,36 +47,6 @@ class PlainThing < ActiveRecord::Base
 end
 
 describe "GraphMediator" do
-
-  before(:all) do
-    create_schema do |conn|
-      conn.create_table(:foos, :force => true) do |t|
-        t.string :foo
-        t.integer :lock_version, :default => 0
-        t.timestamps
-      end
-    
-      conn.create_table(:bars, :force => true) do |t|
-        t.string :bar
-        t.integer :lock_version, :default => 0
-        t.timestamps
-      end
-      
-      conn.create_table(:untimestamped_things, :force => true) do |t|
-        t.string :name
-        t.integer :lock_version, :default => 0
-      end
-    
-      conn.create_table(:unlocked_things, :force => true) do |t|
-        t.string :name
-        t.timestamps
-      end
-    
-      conn.create_table(:plain_things, :force => true) do |t|
-        t.string :name
-      end
-    end
-  end
 
   it "should provide a module attribute accessor for turning mediation on or off" do
     GraphMediator::Configuration.enable_mediation.should == true
