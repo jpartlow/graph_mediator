@@ -11,7 +11,7 @@ module Dependents
         conn.create_table(:track_destroys, :force => true) do |t|
           t.string :name
           t.integer :lock_version, :defaults => 0
-          t.tiimestamps
+          t.timestamps
         end
       end
 
