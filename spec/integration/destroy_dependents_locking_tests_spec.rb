@@ -11,7 +11,7 @@ module Dependents
         conn.create_table(:track_destroys, :force => true) do |t|
           t.string :name
           t.integer :lock_version, :defaults => 0
-          t.tiimestamps
+          t.timestamps
         end
       end
 
@@ -21,9 +21,8 @@ module Dependents
       c.class_eval do 
         include GraphMediator
         
-        def destroy_without_callbacks
+        before_destroy do
           callbacks << being_destroyed?
-          super
         end
         define_method(:callbacks) { callbacks_ref }
       end
