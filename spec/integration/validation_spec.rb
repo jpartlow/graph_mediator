@@ -10,10 +10,10 @@ describe "GraphMediator validation scenarios" do
     Object.__send__(:remove_const, :Traceable)
   end
 
-  it "should not call after_mediation if validation fails" do
+  it "should not call attempt to mediate if validation fails" do
     t = Traceable.new
     t.save.should == false
-    @traceables_callbacks.should == [:before]
+    @traceables_callbacks.should == []
   end
 
 end
