@@ -58,7 +58,7 @@ describe "GraphMediator::Mediator" do
       t.save!
       @traceables_callbacks.should == [:before, :before_create, :reconcile, :cache]
     ensure
-      Traceable.before_create_callback_chain.clear
+      Traceable._create_callbacks.clear
     end
   end
 
