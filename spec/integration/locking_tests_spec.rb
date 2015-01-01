@@ -107,7 +107,7 @@ describe "GraphMediator locking scenarios" do
           Party.reset_column_information
         end
 
-        it "will raise stale because of updates to its own children counter_caches" do
+        it "will raise stale because of updates to the dependents counter_caches" do
 #          Reservation::MediatorProxy._graph_mediator_logger = TestLogger.new
           Reservation::MediatorProxy._graph_mediator_log_level = 0
           r = Reservation.create!(:starts => @today, :ends => @today)
@@ -118,7 +118,10 @@ describe "GraphMediator locking scenarios" do
           end
           r.mediated_transaction do
             r.lodge(party, :in => room)
-            lambda { party.touch }.should raise_error(ActiveRecord::StaleObjectError)
+            # party.reload # without a reload, party is unaware of changes made
+            # to it by the creation of the party_lodging row implicit in
+            # r.lodge
+            lambda { party.update_attributes(:name => 'Bob') }.should raise_error(ActiveRecord::StaleObjectError)
           end
         end
 

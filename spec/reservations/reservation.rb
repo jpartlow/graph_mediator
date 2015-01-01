@@ -10,7 +10,7 @@ class Reservation < ActiveRecord::Base
 
   def lodge(party, options = {})
     lodging = options[:in]
-    party.party_lodgings.create(:lodging_id => lodging)
+    party.party_lodgings.create!(:lodging => lodging)
   end
 
   def reconcile; :reconcile; end
