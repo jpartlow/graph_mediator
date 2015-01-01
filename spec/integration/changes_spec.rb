@@ -40,11 +40,11 @@ describe "GraphMediator change tracking scenarios" do
     r = ChangesRoot.new(:name => :foo)
     r.save_without_mediation!
     r.state = :one
-    changes = r.changes
+    expected_changes = {"state" => [nil, :one]}
     run = false
     r.tests = Proc.new do |instance|
-      instance.changes.should == {}
-      instance.mediated_changes.should == { ChangesRoot => { r.id => changes } }
+      instance.changes.should == expected_changes
+      instance.mediated_changes.should == { ChangesRoot => { r.id => expected_changes } }
       run = true
     end
     r.save!
@@ -53,12 +53,12 @@ describe "GraphMediator change tracking scenarios" do
 
   it "should track changes to a newly created mediated instance" do
     r = ChangesRoot.new(:name => :foo)
-    changes = r.changes
+    expected_changes = {"name" => [nil, :foo]}
     run = false
     r.tests = Proc.new do |instance|
       instance.should equal(r)
-      instance.changes.should == {}
-      instance.mediated_changes.should == { ChangesRoot => { :_created => [changes] } }
+      instance.changes.should == expected_changes.merge("id" => [nil, r.id])
+      instance.mediated_changes.should == { ChangesRoot => { :_created => [expected_changes] } }
       run = true
     end
     r.save!
