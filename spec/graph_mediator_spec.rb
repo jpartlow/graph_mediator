@@ -48,6 +48,7 @@ describe "GraphMediator" do
         t.string :name
       end
     end
+    GraphMediatorSpec::Foo.reset_column_information
   end
 
   it "should provide a module attribute accessor for turning mediation on or off" do

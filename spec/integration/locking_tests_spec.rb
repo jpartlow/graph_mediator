@@ -165,6 +165,8 @@ describe "GraphMediator locking scenarios for classes without counter_caches" do
         t.timestamps
       end
     end
+    Foo.reset_column_information
+    Bar.reset_column_information
   end
 
   class Bar < ActiveRecord::Base
