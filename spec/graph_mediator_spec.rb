@@ -265,8 +265,8 @@ describe "GraphMediator" do
         end
       end
       nested = Traceable.create!(:name => :nested!)
-      @traceables_callbacks.should == [:before, :nested_create!, :nested_save!, :reconcile, :cache, :nested_save!]
-      # The final nested save is the touch and lock_version bump
+      @traceables_callbacks.should == [:before, :nested_create!, :nested_save!, :reconcile, :cache]
+      nested.lock_version.should eq(1)
     end
 
     # can't nest before_create.  The second mediated_transaction will occur
